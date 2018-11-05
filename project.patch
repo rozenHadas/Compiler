@@ -1,0 +1,6746 @@
+diff --git a/Makefile b/Makefile
+index e69de29..68c16fd 100644
+--- a/Makefile
++++ b/Makefile
+@@ -0,0 +1,6 @@
++%:
++	echo '(load "project/final_project.scm") (compile-scheme-file "$(MAKECMDGOALS).scm" "$(MAKECMDGOALS).s")' | scheme -q
++
++	nasm -f elf64 $(MAKECMDGOALS).s -o $(MAKECMDGOALS).o
++
++	gcc -m64 -Wall -g $(MAKECMDGOALS).o -o $(MAKECMDGOALS)
+\ No newline at end of file
+diff --git a/final_project.scm b/final_project.scm
+new file mode 100644
+index 0000000..3ee1f84
+--- /dev/null
++++ b/final_project.scm
+@@ -0,0 +1,3328 @@
++(load "project/sexpr-parser.scm")
++(load "project/tag-parser.scm")
++(load "project/semantic-analyzer.scm")
++
++(define <void> (if #f #f))
++
++(define file->list
++	(lambda (in-file)
++		(let ((in-port (open-input-file in-file)))
++			(letrec ((run
++						(lambda ()
++							(let ((ch (read-char in-port)))
++								(if (eof-object? ch)
++									(begin
++									(close-input-port in-port)
++									'())
++								(cons ch (run)))))))
++			(run))))
++)
++
++(define pipeline
++	(lambda (s)
++		((star <sexpr>) s
++			(lambda (m r)
++				(map (lambda (e)
++					(annotate-tc
++						 (pe->lex-pe
++					 		 (box-set
++				 	   			(remove-applic-lambda-nil
++									(parse (convert_prog e))
++								))))
++					)
++				m))
++		(lambda (f) 'fail))))
++
++ (define convert_prog
++	(lambda (prog)
++		(letrec ((loop (lambda (exp)
++					(if (pair? exp)
++						(cond ((ormap (lambda (op) (equal? (car exp) op)) '(+ - * / ))
++									(if (> (length (cdr exp)) 2)
++										`( ,@(make_binary_calc (car exp) (cdr exp)))
++										`(,@exp)))
++							  ((ormap (lambda (op) (equal? (car exp) op)) '(< > = ))
++									(if (> (length (cdr exp)) 2)
++										`( ,@(make_binary_boolean (car exp) (cdr exp)))
++										`(,@exp)))
++							 ((equal? (car exp) 'apply)
++									(if (ormap (lambda (op) (equal? (cadr exp) op)) '(+ - * / ))
++										(if (> (length (car (cdaddr exp))) 2)
++											`( ,@(make_binary_calc (cadr exp) (car (cdaddr exp))))
++											`(,@exp))
++										(if (ormap (lambda (op) (equal? (cadr exp) op)) '(< > = ))
++											(if (> (length (car (cdaddr exp))) 2)
++												`( ,@(make_binary_boolean (cadr exp) (car (cdaddr exp))))
++											`(,@exp))
++										`(,@exp))))
++						 	 ((pair? (car exp))
++									`( ,(loop (car exp)) ,@(map loop (cdr exp))))
++							(else `( ,(car exp) ,@(map loop (cdr exp)))))
++					`( ,@exp))
++			)))
++		(loop prog)
++	)
++)) 
++
++(define make_binary_calc 
++	(lambda (op lst)
++		(let ((param (reverse lst)))
++			 (letrec ((loop (lambda (first rest)
++				   			(if (equal? (length rest) 1)
++				   					`( ,op  ,(car rest) ,first)
++				   				`(,op ,(loop (car rest) (cdr rest)) ,first )))))
++				(loop (car param) (cdr param)))
++		)))
++
++(define make_binary_boolean 
++	(lambda (op lst)
++		(let* ((paramrev (reverse lst))
++				(param1 (list-tail paramrev 1))
++				(paramFirst (reverse param1))
++				(paramSec (list-tail lst 1)))
++				`(and ,@(print_binary_boolean op paramFirst paramSec))
++		)))
++
++(define print_binary_boolean
++	(lambda (op list1 list2)
++		(map (lambda (f s) `( ,op ,f ,s) ) list1 list2 )
++	))
++
++
++
++
++(define compile-scheme-file
++	(lambda (srcFile trgFile)
++		(let* ( (output (open-output-file trgFile 'truncate))
++				(afterParser (pipeline (file->list srcFile)))
++				(funcLibrary (pipeline (file->list "project/primitive.scm")))
++				(parsedFunc (append funcLibrary afterParser))
++				(make_list (constract_lists parsedFunc))
++				(make_table (constract_tables))
++				;(make_table_ass (constract_assembly_table))
++				;;(gen (cons-loop code_gen afterParser))	
++			)
++	;(display "the prog is: \t")
++			;(display funcLibrary)
++			;(display "\n")
++			;(display constLst)
++			;(display "\n")
++			;(display const_table)
++		 (display
++	       (string-append 
++                "%include \"project/scheme.s\" \n"
++                (constract_assembly_table) "\n\n"
++	            printSetUp "\n"
++	            "\tmov rax, malloc_pointer \n"
++				"\tmov qword [rax], start_of_malloc \n"
++				(symbol_table_to_ass)
++				(gen_library_functions)
++               
++                ;(cons-loop code_gen parsedFunc) "\n"
++  			;(gen-sexprs  (apply string-append (map (lambda (el) (string-append (code-gen el -1) "\n push rax\n" "call write_sob_if_not_void \n"))   parsed-file )))
++  				(apply string-append (map (lambda (prog) (string-append (code_gen prog -1) "\n push rax\n" "call write_sob_if_not_void \n"))
++  						parsedFunc))
++                use_write_sob
++                ;"call write_sob_if_not_void \n"
++                ;"ret "
++                ;epilogue "\n"
++			)
++		  output) 
++
++	      (close-output-port output)
++		)
++	)
++)
++
++(define printSetUp
++	(string-append 
++		"section .text\n"
++		"main: \n"
++
++		"\tmov rax, 0\n"
++		"\tpush rax\n"
++		"\tpush rax\n"
++		"\tpush Done_Compile\n"
++		"\t push rbp\n"
++		"\tmov rbp,rsp\n"
++	)
++) 
++
++(define use_write_sob
++	(string-append
++		"Done_Compile:\n"
++		"\tpop rbx\n"
++		"\tmov rax, 0\n"
++		"\tcall exit\n"
++	)
++)
++
++(define current_sub_prog 0)
++
++(define cons-loop
++        (lambda (func lst)
++                (if (null? lst) 
++                    ""
++                ;(string-append (func (car lst) -1) (cons-loop func (cdr lst))))))
++                    (let ((gen (func (car lst) -1)))
++                    	(set! current_sub_prog (+ current_sub_prog 1))
++                    (string-append gen (cons-loop func (cdr lst)))))))
++
++ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; LIST FOR TABLES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
++(define fvar_library_functions 
++    '(cons car cdr map append + apply null? pair? boolean? char? integer? procedure? 
++        string? symbol? vector? make-string make-vector not string-length vector-length zero? vector char->integer
++        integer->char set-car! set-cdr! string-ref vector-ref symbol->string string->symbol eq? - * / = > < expt
++         list remainder denominator numerator number? rational? string-set! vector-set! ))
++
++(define constLst '()) ;`( ,<void> () ,#t ,#f))
++(define symbolLst '())
++(define globalLst fvar_library_functions)
++
++(define reset_lists
++    (lambda ()
++        (set! constLst '()) ;`( ,<void> () ,#t ,#f))
++        (set! symbolLst '())
++        (set! globalLst '()) ;fvar_library_functions)
++    )
++)
++
++
++                    
++
++(define constract_lists
++	(lambda (prog)
++			(letrec ((loop (lambda (prog) 
++							(if (pair? prog) 
++								(cond ((isIt? (car prog) '(const))
++										(build_const_list (cadr prog))) 
++									 ((isIt? (car prog) '(var bvar pvar))
++									 	(build_const_list (cadr prog)))
++									 ((isIt? (car prog) '(fvar define))
++									   (build_global_list (cdr prog)))
++									((pair? (car prog)) 
++										(loop (car prog)) (loop (cdr prog)))
++									(else (loop (cdr prog)))
++								)
++								'()
++							))
++					))
++			(loop prog)
++			)
++			(remove_duplicate)
++			;(TEST_print)
++		)
++)
++
++(define TEST_print
++	(lambda ()
++		(display `(CONST LIST: ,constLst))
++		(display "\n")
++		(display `(GLOBAL LIST: ,globalLst))
++		(display "\n")
++		(display `(SYMBOL LIST: ,symbolLst))
++
++	)
++)
++
++(define make_sub_lists
++    (lambda (lst)
++        (letrec* (( ans '())
++                  (loop (lambda (lst)
++                  	(if (not (or (equal? lst (void)) (equal? lst (list)) (equal? lst #t) (equal? lst #f) (boolean? lst)))
++                            (cond ((null? lst) lst)
++                            	  ((integer? lst) (list lst) )
++                				  ((number? lst) (list (numerator lst) (denominator lst) lst))			
++                                  ((vector? lst) (build_const_list (list lst)))
++                                  ((symbol? lst) (append (list (symbol->string lst)) (list lst)))
++                                  ((not (list? lst))
++                                   (list lst))
++                                  (else (append (loop (car lst)) (loop (cdr lst)) (list lst) ans)))
++                       	'() ) )))
++            (loop lst))))
++
++(define build_const_list
++    (lambda (lst)
++        (letrec ((loop (lambda (lst)
++        	(if (not (or (equal? lst (void)) (equal? lst (list)) (equal? lst #t) (equal? lst #f)))
++            (cond 
++                  ((integer? lst) (list lst) )
++                  ((number? lst) (list (numerator lst) (denominator lst) lst))
++                  ((list? lst) (make_sub_lists lst))
++                  ((pair? lst) (list (car lst) (cdr lst) lst))
++                  ((vector? lst) 
++                        (append (cons_vector_loop make_sub_lists (vector->list lst)) (list lst)))
++                  ((symbol? lst) (append (list (symbol->string lst)) (list lst))) ;(build_symbol_list lst))
++
++                  (else (list lst)))
++
++        '()))))
++        (set! constLst (append constLst (loop lst)))
++        )
++	)
++)
++
++
++(define build_symbol_list
++	(lambda (s)
++		(display s)
++		(if (list? s)
++		 (if (> (length s) 1)
++			(set! symbolLst (append symbolLst (list (car s)))) 
++			(set! symbolLst (append symbolLst s))
++		 ) 
++		 (if (not (null? s))
++			(set! symbolLst (append symbolLst (list s))))
++		)
++	)
++)
++
++(define build_global_list
++	(lambda (g)
++		(if (> (length g) 1)
++			(let ((item (cdar g)))
++				(set! globalLst (append globalLst item))
++				(constract_lists (cdr g)))
++			(set! globalLst (append globalLst g))
++		)
++	)
++)
++
++
++(define remove_duplicate
++	(lambda () 
++		(set! constLst (remove_dup constLst))
++		(set! symbolLst (remove_dup symbolLst))
++		(set! globalLst (remove_dup globalLst))
++	)
++)
++
++(define remove_dup 
++    (lambda (lst)
++    	(if (not (null? lst))
++	        (fold-left (lambda (acc el)
++	                        (if (member el acc)
++	                            acc
++	                            (append acc (list el))))
++	                    '()
++	                    lst)
++	    '())))
++
++(define cons_vector_loop
++        (lambda (func lst)
++                (if (null? lst) 
++                    '()
++                    (let ((res (func (car lst))))
++                    (append res (cons_vector_loop func (cdr lst)))))))
++
++(define isIt? 
++	(lambda (e formList)
++			(ormap (lambda (form) (equal? e form)) formList)
++	)
++)
++
++ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; TABLES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
++
++(define START_MEMORY 20)
++(define memory_counter START_MEMORY)
++(define start_constT_memo 20)
++(define start_symbolT_memo 20)
++(define start_globalT_memo 20)
++(define const_table '())
++(define global_table '())
++(define symbol_table '())
++
++(define inc_get_memory_counter
++    (lambda (n)
++        (let ((old memory_counter))
++            (set! memory_counter (+ memory_counter n))
++                old)))
++
++(define constract_tables
++	(lambda ()
++		(build_const_table)
++		;(set! start_symbolT_memo memory_counter)
++		;(build_symbol_table)
++		(set! start_globalT_memo memory_counter)
++		(build_global_table)
++		;(TEST_print_tables)
++	)
++)
++
++(define TEST_print_tables
++	(lambda ()
++		(display "
++			CONST TABLE: 
++		")
++		(display const_table)
++		;(display symbol_table)
++		(display "
++			GLOBAL TABLE: 
++		")
++		(display global_table)
++	)
++)
++
++(define build_const_table
++	(lambda ()
++		;(let* cList constLst)
++		(set! const_table 
++			(list 
++				 `( ,(inc_get_memory_counter 1) ,(void) ("sobVoid") )
++				 `( ,(inc_get_memory_counter 1) ,(list) ("sobNil"))
++				 `( ,(inc_get_memory_counter 2) ,#f ("sobFalse"))
++				 `( ,(inc_get_memory_counter 2) ,#t ("sobTrue"))
++				)
++             )
++		(cMap (lambda (item) (set! const_table (append const_table (list (create_row_const_table item))))) constLst);cList)
++	)
++
++)
++
++(define count_label_const_table 0)
++(define set_count 
++	(lambda (num)
++		(let ((old count_label_const_table))
++ 	(set! count_label_const_table (+ count_label_const_table num))
++	 old)))
++
++
++(define create_row_const_table
++	(lambda (item)
++		(cond
++			((integer? item) 
++				(let ((label_int (if (< item 0) (string-append "sobInt_neg" (number->string (* -1 item)))
++												 (string-append "sobInt_" (number->string item)))))
++									`( ,(inc_get_memory_counter 2) ,item (,label_int ,item))))
++			((number? item) (let ((label_frac (if (< item 0) (string-append "sobFrac_neg" (number->string (* -1 (numerator item))) "div"(number->string (denominator item)))
++															 (string-append "sobFrac_" (number->string (numerator item)) "div"(number->string (denominator item))))))
++							`( ,(inc_get_memory_counter 3) ,item (,label_frac ,(number->string (numerator item)) ,(number->string (denominator item)) ))))
++			((char? item) (let ((num_label (set_count 1))
++								(label_char (string-append "sobChar_"(number->string count_label_const_table))))
++							`(,(inc_get_memory_counter 2) ,item (,label_char ,(char->integer item)))))
++			((string? item) (let ((strLen (string-length item))
++								 (num_label (set_count 1)) ;update num of label
++								(label_string (string-append "sobString_" (number->string count_label_const_table)))
++								(get_chars (map (lambda (el) (char->integer el)) (string->list item))))
++								`( ,(inc_get_memory_counter (+ 2 strLen)) ,item (,label_string ,strLen ,@get_chars))))
++			((symbol? item) (let* ((num_label (set_count 1))
++									(label_symbol (string-append "sobSymbol_"(number->string count_label_const_table)))
++									(temp 	(build_symbol_table label_symbol)))
++							`( ,(inc_get_memory_counter 2) ,item (,label_symbol ,item )))) 
++			((pair? item) (let ((num_label (set_count 1))
++								(label_pair (string-append "sobPair_" (number->string count_label_const_table))))
++							`( ,(inc_get_memory_counter 3) ,item (,label_pair ,(get_label (car item) const_table) ,(get_label (cdr item) const_table)))))
++			((vector? item)  (let ((num_label (set_count 1))
++									(addresses (map (lambda (el) (get_label el const_table)) (vector->list item)))
++									(label_vector (string-append "sobVector_" (number->string count_label_const_table))))
++                              `(,(inc_get_memory_counter (+ (vector-length item) 2)) ,item (,label_vector ,(vector-length item) ,@addresses))))
++
++			(else 'ERROR_CONST_TABLE )
++		)
++	)
++)
++
++(define build_symbol_table
++	(lambda (symLabel)
++		(set! symbol_table (append symbol_table (list symLabel)))
++	)
++)
++
++(define build_global_table
++	(lambda ()
++		(cMap (lambda (item) (set! global_table (append global_table (list (create_row_global_table item))))) globalLst)
++	)
++)
++
++(define create_row_global_table
++	(lambda (item)
++			 `(,item ,(string-append "Lglobal_" (number->string (inc_get_memory_counter 1))))		
++	)
++)
++
++
++
++(define cMap
++    (lambda (proc lst)
++        (fold-left
++            (lambda(acc el)
++                (append acc (list (proc el))))
++            '()
++            lst)))
++
++(define get_memo_loc
++	(lambda (item table)
++        (caar (filter (lambda (el) (equal? item (cadr el))) table))
++    )
++)
++
++(define get_label
++	(lambda (item table)
++        (car (caddar (filter (lambda (el) (equal? item (cadr el))) table)))
++    )
++)
++
++(define get_fvar_label
++	(lambda (item)
++        (cadar (filter (lambda (el) (equal? item (car el))) global_table))
++    )
++)
++
++ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; TABLE TO ASSEMBLY ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
++(define table_ass_list_string '())
++
++(define constract_assembly_table
++	(lambda ()
++		(let ((constAss (const_table_to_ass))
++				(symbolAss (defult_symbol_table_to_ass))
++				(globalAss (global_table_to_ass)))
++			;(set! table_ass_list_string (string-append constAss globAss))
++			 ;table_ass_list_string	
++			 (string-append constAss "\n" symbolAss "\n" globalAss "\n" )
++			)	
++	)
++)
++
++(define gen_library_functions
++	(lambda ()
++		(string-append
++			""
++			(lib_Car) (lib_Cdr) (lib_Is_Boolean) (lib_Is_Null) (lib_Is_Char) (lib_Is_Integer) (lib_Is_Pair) (lib_Is_Procedure) 
++			(lib_Is_String) (lib_Is_Vector) (lib_Is_Symbol) (lib_Is_Zero) (lib_Is_Number) (lib_Is_Rational) (lib_Is_Eq) (lib_Vector)
++			(lib_Make_string)(lib_Make_vector) (lib_binary_plus) (lib_binary_sub) (lib_cons) (lib_binary_div) (lib_binary_mul) (lib_binary_equal)
++			(lib_numerator) (lib_denominator) (lib_remainder) (lib_char_to_integer) (lib_integer_to_char) (lib_symbol_to_string)  (lib_string_length) (lib_string_ref)
++			(lib_string_set) (lib_vector_length) (lib_vector_ref) (lib_vector_set) (lib_make_apply) (lib_grater) (lib_smaller) (lib_string_to_symbol)
++			
++		)))
++
++(define lib_Car
++	(lambda ()
++		(let ((label (get_fvar_label 'car )))
++			
++			(string-append
++			
++			"\tjmp Car_Body\n"
++			"L_Car:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov rax, An(0)\n"
++			"\tCAR rax\n"  
++			"\tpop rbp\n"
++			"\tret\n\n"
++
++			"Car_Body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , L_Car\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++
++			))))
++
++(define lib_Cdr
++	(lambda ()
++		(let ((label (get_fvar_label 'cdr)))
++			(string-append
++
++			"\tjmp Cdr_Body\n"
++			"L_Cdr:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov rax, An(0)\n"
++			"\tCDR rax\n"  
++			"\tpop rbp\n"
++			"\tret\n\n"
++
++			"Cdr_Body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , L_Cdr\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++
++(define lib_Is_Boolean
++	(lambda ()
++		(let ((label (get_fvar_label 'boolean?)))
++			(string-append
++				
++			"\tjmp Boolean_body\n"
++			"Is_Boolean:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_BOOL\n"
++			"\tje Bool_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Bool_EXIT\n"
++			"Bool_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Bool_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Boolean_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Boolean\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"			
++
++			))))
++
++(define lib_Is_Null
++	(lambda ()
++		(let ((label (get_fvar_label 'null?)))
++			(string-append
++			"\tjmp Null_body\n"
++			"Is_Null:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_NIL\n"
++			"\tje Null_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Null_EXIT\n"
++			"Null_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Null_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Null_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Null\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"	
++
++			))))
++
++(define lib_Is_Char
++	(lambda ()
++		(let ((label (get_fvar_label 'char?)))	
++			(string-append
++
++			"\tjmp Char_body\n"
++			"Is_Char:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_CHAR\n"
++			"\tje Char_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Char_EXIT\n"
++			"Char_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Char_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Char_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Char\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"	
++
++			))))
++
++(define lib_Is_Integer
++	(lambda ()
++		(let ((label (get_fvar_label 'integer?)))
++			(string-append
++
++			"\tjmp Integer_body\n"
++			"Is_Integer:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_INTEGER\n"
++			"\tje Integer_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Integer_EXIT\n"
++			"Integer_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Integer_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Integer_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Integer\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_Is_Pair
++	(lambda ()
++		(let ((label (get_fvar_label 'pair?)))
++			(string-append
++			"\tjmp Pair_body\n"
++			"Is_Pair:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_PAIR\n"
++			"\tje Pair_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Pair_EXIT\n"
++			"Pair_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Pair_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Pair_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Pair\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_Is_Procedure
++	(lambda ()
++		(let ((label (get_fvar_label 'procedure?)))
++			(string-append
++			"\tjmp Procedure_body\n"
++			"Is_Procedure:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_CLOSURE\n"
++			"\tje Procedure_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Procedure_EXIT\n"
++			"Procedure_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Procedure_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Procedure_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Procedure\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_Is_String
++	(lambda ()
++		(let ((label (get_fvar_label 'string?)))
++			(string-append
++
++			"\tjmp String_body\n"
++			"Is_String:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_STRING\n"
++			"\tje String_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp String_EXIT\n"
++			"String_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"String_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"String_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_String\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++
++			))))
++
++(define lib_Is_Vector
++	(lambda ()
++		(let ((label (get_fvar_label 'vector?)))
++			(string-append
++
++			"\tjmp Vector_body\n"
++			"Is_Vector:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_VECTOR\n"
++			"\tje Vector_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Vector_EXIT\n"
++			"Vector_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Vector_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Vector_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Vector\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_Is_Symbol
++	(lambda ()
++		(let ((label (get_fvar_label 'symbol?)))
++			(string-append
++
++			"\tjmp Symbol_body\n"
++			"Is_Symbol:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_SYMBOL\n"
++			"\tje Symbol_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Symbol_EXIT\n"
++			"Symbol_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Symbol_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Symbol_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Symbol\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_Is_Zero
++	(lambda ()
++		(let ((label (get_fvar_label 'zero?)))
++			(string-append
++
++			"\tjmp Zero_body\n"
++			"Is_Zero:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tDATA r8\n" 
++			"\tcmp  r8, 0\n"
++			"\tje Zero_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Zero_EXIT\n"
++			"Zero_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Zero_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Zero_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Zero\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_Is_Number
++	(lambda ()
++		(let ((label (get_fvar_label 'number?)))
++
++			(string-append
++			
++			"\tjmp Number_body\n"
++			"Is_Number:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_INTEGER\n"
++			"\tje Integer_Num_True\n"
++			"\tcmp r8, T_FRACTION\n"
++			"\tje Fraction_Num_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Number_EXIT\n"
++			"Integer_Num_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Fraction_Num_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Number_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Number_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Number\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_Is_Rational
++	(lambda ()
++		(let ((label (get_fvar_label 'rational?)))
++
++			(string-append
++			
++			"\tjmp Rational_body\n"
++			"Is_Rational:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tand r8, 15\n" 
++			"\tcmp  r8, T_INTEGER\n"
++			"\tje Ratio_True\n"
++			"\tcmp r8, T_FRACTION\n"
++			"\tje Ratio_True\n"
++			"\tmov rax , SOB_FALSE\n"
++			"\tjmp Rational_EXIT\n"
++			"Ratio_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++			"Rational_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"Rational_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Rational\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++(define lib_Is_Eq
++	(lambda ()
++		(let ((label (get_fvar_label 'eq?)))
++			(string-append
++			
++			"\tjmp Equal_body\n"
++			"Is_Equal:\n" 
++		 	"\tpush rbp\n"
++			"\tmov rbp,rsp\n"
++			"\tmov r9,An(0)\n"
++			"\tmov r10,An(1)\n"
++			"\tcmp r9, r10\n"
++			"\tje Eq_True\n"
++
++			"Eq_False:\n"
++			"\tmov rax, SOB_FALSE\n"
++			"\tjmp Eq_EXIT\n"
++
++			"Eq_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++
++			"Eq_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++			
++			"Equal_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Is_Equal\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_Make_string
++	(lambda ()
++		(let ((label (get_fvar_label 'make-string))
++				(char_def (number->string 0)))
++			(string-append
++
++			"\tjmp Make_String_body\n"
++			
++			"\tMake_String:\n"	
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++
++			"\tmov r15,"char_def"\n"
++			"\tmov r10, An(0)\n"; num of iteration
++			"\tDATA r10\n"
++			"\tmov r8, arg_count\n"
++			"\tcmp r8, 1\n"
++			"\tje make_string_impl\n"
++			"\tmov r15, An(1)\n";char to convert
++			
++			"make_string_impl:\n"
++			"\tcmp r10, 0\n"
++			"\tje String_zero\n"
++			"\tDATA r15\n"
++			"\tmov r12 , 0\n"
++			"\tMY_MALLOC(r10)\n"
++			
++			"make_string_impl_loop:\n"
++			"\tcmp r12, r10\n"
++			"\tje make_string_loop_END\n"
++			"\tadd [rax+r12], r15\n"; r12 = answer
++			"\tinc r12\n"
++			"\tjmp make_string_impl_loop\n"
++
++			"String_zero:\n"
++			"\tmov rax,0\n"
++			"\tor rax, T_STRING\n"
++			"\tjmp String_end\n"
++			
++			"make_string_loop_END:\n"
++			"\tMY_MAKE_STRING r12, rax\n"
++			"\tmov rax, r12\n"
++			"\tpush rax \n"
++			
++			"String_end:\n"
++			"\tleave\n"
++			"\tret\n"
++			
++			"Make_String_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, -1 , Make_String\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_Make_vector
++	(lambda ()
++		(let ((label (get_fvar_label 'make-vector))
++			  (char_def (number->string 0)))
++			(string-append
++			"\tjmp make_vector_body\n"
++			
++			"make_vector:\n"	
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++
++			"\tmov r9, A0\n"
++			"\tDATA r9\n"
++			"\tmov r11, 03\n"  ;defult char
++			"\tmov r8, arg_count\n" ;num of argument 
++			"\tcmp r8, 1\n"
++			"\tje make_vector_impl\n"
++			"\tmov r11, An(1)\n" ;real char
++			
++			"make_vector_impl:\n"
++			"\tmov r15, 0\n" ;index
++			"\tDATA r15\n"
++			"\tcmp r9, 0\n"
++			"\tje make_vector_zero\n"
++			"\tmov r12, A0\n"
++			"\tmov r14, r12\n"
++			"\tshl r14, 3\n"
++			"\tMY_MALLOC(r14)\n"
++			"\tmov rdi, rax\n" ;ans in rbx 
++
++			"make_vector_impl_loop:\n"
++			"\tcmp r15, r9\n"
++			"\tje make_vector_loop_END\n"
++			"\tMY_MALLOC(8)\n"
++			"\t mov [rax], r11\n"
++			"\tmov [rdi+r15*8] ,rax\n"
++			"\tinc r15\n"
++			"\tjmp make_vector_impl_loop\n"
++
++			"make_vector_zero:\n"
++			"\tMY_MALLOC(8)\n"
++			"\tmov rax,0\n"
++			"\tor rax, T_VECTOR\n"
++			"\tjmp make_vector_end\n"
++			
++			"make_vector_loop_END:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tshl r9, 30\n"
++			"\tsub rdi, start_of_data\n"
++			"\tor r9, rdi\n"
++			"\tshl r9, TYPE_BITS\n"
++			"\tor r9, T_VECTOR\n"
++
++			"\tmov [rax], r9\n"
++			"\tmov rax,[rax]\n"
++			
++			"make_vector_end:\n"
++			"\tleave\n"
++			"\tret\n"
++			
++			"make_vector_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, 0 , make_vector\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			)
++		)
++	)
++)
++
++(define lib_Vector
++	(lambda ()
++		(let ((label (get_fvar_label 'vector)))
++			(string-append
++
++			"\tjmp vector_body\n"
++			
++			"\tvector:\n"	
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++
++			"\tmov r8, arg_count\n" ;num of argument 
++			"\tcmp r8, 0\n"
++			"\tje Vector_zero\n"
++			"\tmov r15, 0\n" ;index
++			"\tmov r14, r8\n"
++			"\tshl r14, 3\n"
++			"\tMY_MALLOC(r14)\n"
++			"\tmov rdi, rax\n" ;ans in rbx 
++
++
++			"vector_impl_loop:\n"
++			"\tcmp r15, r8\n"
++			"\tje vector_loop_END\n"
++			"\tmov r10, r15\n"
++			"\tmov r11, An(r10)\n"
++			"\tMY_MALLOC(16)\n"
++			"\t mov [rax], r11\n"
++
++			"\tmov [rdi+r15*8] ,rax\n"
++			"\tinc r15\n"
++			"\tjmp vector_impl_loop\n"
++
++			"Vector_zero:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tmov rax,0\n"
++			"\tor rax, T_VECTOR\n"
++			"\tjmp Vector_end\n"
++			
++			"vector_loop_END:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tshl r8, 30\n"
++			"\tsub rdi, start_of_data\n"
++			"\tor r8, rdi\n"
++			"\tshl r8, TYPE_BITS\n"
++			"\tor r8, T_VECTOR\n"
++
++			"\tmov [rax], r8\n"
++			"\tmov rax,[rax]\n"
++			
++			"Vector_end:\n"
++			"\tleave\n"
++			"\tret\n"
++			
++			"vector_body:\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, 0 , vector\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			)
++		)
++	)
++)
++
++(define lib_binary_plus
++	(lambda ()
++		(let ((label (get_fvar_label '+)))
++		(string-append
++
++		"\tjmp Binary_add_body\n"
++
++		"Binary_add:\n"
++		"\tpush rbp\n"
++		"\tmov rbp,rsp\n"
++		"\tmov r8, arg_count\n"
++		"\tcmp r8, 0\n"
++		"\tje Binary_add_NO_PARAMETERS\n"
++		"\tcmp r8,1 \n"
++		"\tjne Binary_add_REGULAR \n"
++
++		"Binary_add_ONE_PARAMETER:\n"
++		"\tmov r8, An(0)\n"
++		"\tmov rax, r8\n"
++		"\tjmp Binary_add_END\n"
++
++
++		"Binary_add_REGULAR:\n"
++		"\tmov r8, An(0)\n"
++		"\tmov r9, An(1)\n"
++
++		"AFTER_CONDITIONS_OF_PARAMETERS:\n"
++		"\tmov r10, r8\n"
++		"\tmov r11, r9 \n"; transfer the args to temp register
++		"\tand r10, 15\n" ; put type of r8 in r10
++		"\tand r11, 15\n" ; put type of r9 in r11
++
++		"\tcmp r10, T_INTEGER\n" 		;check if first arg is intger 
++		"\tje CONVERT_ARG1_TO_FRACTION\n"
++			 
++		"\tjmp AFTER_ARG1_CHECKED\n"
++
++
++		"CONVERT_ARG1_TO_FRACTION:\n"
++		"\tmov rdi,r8\n"   			
++		"\tDATA_LOWER rdi\n"
++	  	"\tshl rdi,30\n"		 ;mone
++		"\tmov rcx,1\n"  		;mahane
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		"\tmov r8,rdi\n"
++
++		"AFTER_ARG1_CHECKED:\n"
++		"\tcmp r11, T_INTEGER\n" ; check intger of first arg
++		"\tje CONVERT_ARG2_TO_FRACTION\n"
++			 
++		"\tjmp AFTER_ARG2_CHECKED\n"
++
++		"CONVERT_ARG2_TO_FRACTION:\n"
++		"\tmov rdi,r9\n"   
++		"\tDATA_LOWER rdi\n"
++		"\tshl rdi,30\n" 				;mone
++		"\tmov rcx,1\n"  				;mahane
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		"\tmov r9,rdi\n"
++		   
++		"AFTER_ARG2_CHECKED:\n" 
++
++		"PLUS_TWO_ARGS_FRACTION:\n"
++		"\tmov r10, r8\n"
++		"\tmov r11, r9\n"
++		"\tDATA_UPPER_MEIR r10\n" ; r10 = mone  arg 1 
++		"\tDATA_UPPER_MEIR r11\n"; r11 = mone  arg 2 
++		"\tmov r12, r8\n"
++		"\tmov r13, r9\n"
++		"\tDATA_LOWER_MEIR r12 \n";  r12 = mehane  arg 1
++		"\tDATA_LOWER_MEIR r13  \n"; r12 = mehane  arg 2
++
++		"\tmov rax, r10\n"
++		"\tcqo\n"
++		"\timul r13 \n" 	
++		"\tmov r15, rax \n"   ; (mehane arg 2 * mone arg 1) = r15 
++
++		"\tmov rax, r11\n"
++		"\tcqo\n"
++		"\timul r12 \n"
++		"\tmov r14, rax \n"   ; (mehane arg 1 * mone arg 2 ) = r14
++
++		"\tadd r15, r14\n"  ; now r15 is the result of adding multiplactions- (the mone of the new fraction) 
++
++		"\tmov rax, r12\n"
++		"\tcqo\n"
++		"\timul r13 \n"   
++		"\tmov r8, rax \n"  ; (mehane arg1 * mehane arg 2)   = r8 -this is the mehane of the new fraction; [reuse of r8 beacause i dont need the orginal value anymore]
++
++		"\tpush r8  \n"  ;  mehane of new fraction
++		"\tpush r15\n"  ;   mone of new fraction
++		"\tcall gcd\n"
++
++		"\tmov r9, rax\n" ;  gcd result in r9 [reuse of r9  beacause i dont need the orginal value anymore]
++		"\tpop r15\n"
++		"\tpop r8\n"
++		"\tmov rax, r15\n"
++		"\tcqo\n"
++		"\tidiv r9  \n"  
++		"\tmov r15, rax \n" ; r15 = (mona / gcd)
++
++		"\tmov rax, r8\n"
++		"\tcqo\n"
++		"\tidiv r9\n"
++		"\tmov r8, rax  \n" ; r8 = (maehane / gcd)
++		"\tshl r15,30 \n";   r15 is mone 
++		"\tor r15, r8  \n"; with "or" turn r8 to mehane 
++
++		"\tshl r15, TYPE_BITS \n"; change the type   
++		"\tor r15, T_FRACTION\n"
++		
++
++		"CHECK_REDUCE_TO_INTEGER:\n"
++		"\tmov r8, r15\n"
++
++		"\tDATA_LOWER_MEIR r8 \n" ;mehane
++		"\tmov r9,r15\n"
++		"\tDATA_UPPER_MEIR r9  \n"  ;mone
++
++		"\tmov rax,r9\n"
++		"\tmov rdx,0\n"
++		"\tcqo\n"
++		"\tidiv r8\n"
++
++		"\tcmp rdx,0    \n" 	; rdx = remainder
++		"\tje Binary_add_CHANGE_TO_INTEGER\n"
++		"\tmov rax, r15\n"
++		"\tjmp Binary_add_END\n"
++
++		"Binary_add_NO_PARAMETERS:\n"
++		"\tmov rax,0\n"
++
++		"Binary_add_CHANGE_TO_INTEGER:\n"
++		"\tshl rax, TYPE_BITS\n"
++		"\tor rax, T_INTEGER\n"
++
++		"\tjmp Binary_add_END\n"
++
++		"Binary_add_END:	\n"
++		"\tpop rbp\n"
++		"\tret	\n"
++
++		"Binary_add_body:\n"
++		"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , Binary_add\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++
++	))))
++
++(define lib_binary_sub
++	(lambda ()
++		(let ((label (get_fvar_label '-)))
++		(string-append
++
++		"\tjmp Binary_sub_body\n"
++
++		"Binary_sub:\n"
++		"\tpush rbp\n"
++		"\tmov rbp,rsp\n"
++
++		"\tmov r8, arg_count\n"
++		"\tcmp r8,1 \n"
++		"\tjne Binary_sub_REGULAR \n"
++
++		"Binary_sub_ONE_PARAMETER:\n"
++		"\txor rax, rax\n"
++		"\tmov r9, An(0)\n"
++		"\tDATA r9\n"
++		"\tmov r10, r9\n"
++		"\tsub rax, r10\n"
++		"\tjmp Binary_sub_CHANGE_TO_INTEGER\n"
++
++
++
++		"Binary_sub_REGULAR:\n"
++		"\tmov r8, An(0)\n"
++		"\tmov r9, An(1)\n"
++
++		"AFTER_CONDITIONS_OF_PARAMETERS_SUB:\n"
++		"\tmov r10, r8\n"
++		"\tmov r11, r9 \n"; transfer the args to temp register
++		"\tand r10, 15\n" ; put type of r8 in r10
++		"\tand r11, 15\n" ; put type of r9 in r11
++
++		"\tcmp r10, T_INTEGER\n" 		;check if first arg is intger 
++		"\tje CONVERT_ARG1_TO_FRACTION_SUB\n"
++			 
++		"\tjmp AFTER_ARG1_CHECKED_SUB\n"
++
++
++		"CONVERT_ARG1_TO_FRACTION_SUB:\n"
++		"\tmov rdi,r8\n"   			
++		"\tDATA_LOWER rdi\n"
++	  	"\tshl rdi,30\n"		 ;mone
++		"\tmov rcx,1\n"  		;mahane
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		"\tmov r8,rdi\n"
++
++		"AFTER_ARG1_CHECKED_SUB:\n"
++		"\tcmp r11, T_INTEGER\n" ; check intger of first arg
++		"\tje CONVERT_ARG2_TO_FRACTION_SUB\n"
++			 
++		"\tjmp AFTER_ARG2_CHECKED_SUB\n"
++
++		"CONVERT_ARG2_TO_FRACTION_SUB:\n"
++		"\tmov rdi,r9\n"   
++		"\tDATA_LOWER rdi\n"
++		"\tshl rdi,30\n" 				;mone
++		"\tmov rcx,1\n"  				;mahane
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		"\tmov r9,rdi\n"
++		   
++		"AFTER_ARG2_CHECKED_SUB:\n" 
++
++		"SUB_TWO_ARGS_FRACTION:\n"
++		"\tmov r10, r8\n"
++		"\tmov r11, r9\n"
++		"\tDATA_UPPER_MEIR r10\n" ; r10 = mone  arg 1 
++		"\tDATA_UPPER_MEIR r11\n"; r11 = mone  arg 2 
++		"\tmov r12, r8\n"
++		"\tmov r13, r9\n"
++		"\tDATA_LOWER_MEIR r12 \n";  r12 = mehane  arg 1
++		"\tDATA_LOWER_MEIR r13  \n"; r12 = mehane  arg 2
++
++		"\tmov rax, r10\n"
++		"\tcqo\n"
++		"\timul r13 \n" 	
++		"\tmov r15, rax \n"   ; (mehane arg 2 * mone arg 1) = r15 
++
++		"\tmov rax, r11\n"
++		"\tcqo\n"
++		"\timul r12 \n"
++		"\tmov r14, rax \n"   ; (mehane arg 1 * mone arg 2 ) = r14
++
++		"\tsub r15, r14\n"  ; now r15 is the result of sub multiplactions- (the mone of the new fraction) 
++
++		"\tmov rax, r12\n"
++		"\tcqo\n"
++		"\timul r13 \n"   
++		"\tmov r8, rax \n"  ; (mehane arg1 * mehane arg 2)   = r8 -this is the mehane of the new fraction; [reuse of r8 beacause i dont need the orginal value anymore]
++
++		"\tpush r8  \n"  ;  mehane of new fraction
++		"\tpush r15\n"  ;   mone of new fraction
++		"\tcall gcd\n"
++
++		"\tmov r9, rax\n" ;  gcd result in r9 [reuse of r9  beacause i dont need the orginal value anymore]
++		"\tpop r15\n"
++		"\tpop r8\n"
++		"\tmov rax, r15\n"
++		"\tcqo\n"
++		"\tidiv r9  \n"  
++		"\tmov r15, rax \n" ; r15 = (mona / gcd)
++
++		"\tmov rax, r8\n"
++		"\tcqo\n"
++		"\tidiv r9\n"
++		"\tmov r8, rax  \n" ; r8 = (maehane / gcd)
++		"\tshl r15,30 \n";   r15 is mone 
++		"\tor r15, r8  \n"; with "or" turn r8 to mehane 
++
++		"\tshl r15, TYPE_BITS \n"; change the type   
++		"\tor r15, T_FRACTION\n"
++		
++
++		"CHECK_REDUCE_TO_INTEGER_SUB:\n"
++		"\tmov r8, r15\n"
++
++		"\tDATA_LOWER_MEIR r8 \n" ;mehane
++		"\tmov r9,r15\n"
++		"\tDATA_UPPER_MEIR r9  \n"  ;mone
++
++		"\tmov rax,r9\n"
++		"\tmov rdx,0\n"
++		"\tcqo\n"
++		"\tidiv r8\n"
++
++		"\tcmp rdx,0    \n" 	; rdx have remainder?
++		"\tje Binary_sub_CHANGE_TO_INTEGER\n"
++		"\tmov rax, r15\n"
++		"\tjmp Binary_sub_END\n"
++
++
++		"Binary_sub_CHANGE_TO_INTEGER:\n"
++		"\tshl rax, TYPE_BITS\n"
++		"\tor rax, T_INTEGER\n"
++
++		"Binary_sub_END:	\n"
++		"\tpop rbp\n"
++		"\tret	\n"
++
++		"Binary_sub_body:\n"
++		"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , Binary_sub\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++
++	))))
++
++(define lib_binary_mul
++	(lambda ()
++		(let ((label (get_fvar_label '*)))
++		(string-append
++
++		"\tjmp Binary_mul_body\n"
++
++		"Binary_mul:\n"
++		"\tpush rbp\n"
++		"\tmov rbp,rsp\n"
++		"\tmov r8, arg_count\n"
++		"\tcmp r8, 0\n"
++		"\tje Binary_mul_NO_PARAMETERS\n"
++		"\tcmp r8,1 \n"
++		"\tjne Binary_mul_REGULAR \n"
++
++		"Binary_mul_ONE_PARAMETER:\n"
++		"\tmov r8, An(0)\n"
++		"\tmov rax, r8\n"
++		"\tjmp Binary_mul_END\n"
++
++
++		"Binary_mul_REGULAR:\n"
++		"\tmov r8, An(0)\n"
++		"\tmov r9, An(1)\n"
++
++		"AFTER_CONDITIONS_OF_PARAMETERS_MUL:\n"
++		"\tmov r10, r8\n"
++		"\tmov r11, r9 \n"; transfer the args to temp register
++		"\tand r10, 15\n" ; put type of r8 in r10
++		"\tand r11, 15\n" ; put type of r9 in r11
++
++		"\tcmp r10, T_INTEGER\n" 		;check if first arg is intger 
++		"\tje CONVERT_ARG1_TO_FRACTION_MUL\n"
++			 
++		"\tjmp AFTER_ARG1_CHECKED_MUL\n"
++
++
++		"CONVERT_ARG1_TO_FRACTION_MUL:\n"
++		"\tmov rdi,r8\n"   			
++		"\tDATA_LOWER rdi\n"
++	  	"\tshl rdi,30\n"		 ;mone
++		"\tmov rcx,1\n"  		;mahane
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		"\tmov r8,rdi\n"
++
++		"AFTER_ARG1_CHECKED_MUL:\n"
++		"\tcmp r11, T_INTEGER\n" ; check intger of first arg
++		"\tje CONVERT_ARG2_TO_FRACTION_MUL\n"
++			 
++		"\tjmp AFTER_ARG2_CHECKED_MUL\n"
++
++		"CONVERT_ARG2_TO_FRACTION_MUL:\n"
++		"\tmov rdi,r9\n"   
++		"\tDATA_LOWER rdi\n"
++		"\tshl rdi,30\n" 				;mone
++		"\tmov rcx,1\n"  				;mahane
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		"\tmov r9,rdi\n"
++		   
++		"AFTER_ARG2_CHECKED_MUL:\n" 
++
++		"PLUS_TWO_ARGS_FRACTION_MUL:\n"
++		"\tmov r10, r8\n"
++		"\tmov r11, r9\n"
++		"\tDATA_UPPER_MEIR r10\n" ; r10 = mone  arg 1 
++		"\tDATA_UPPER_MEIR r11\n"; r11 = mone  arg 2 
++		"\tmov r12, r8\n"
++		"\tmov r13, r9\n"
++		"\tDATA_LOWER_MEIR r12 \n";  r12 = mehane  arg 1
++		"\tDATA_LOWER_MEIR r13  \n"; r12 = mehane  arg 2
++
++		"\tmov rax, r10\n"
++		"\tcqo\n"
++		"\timul r11 \n" 	
++		"\tmov r15, rax \n"   ; (mehane arg 2 * mone arg 1) = r15 
++
++		"\tmov rax, r12\n"
++		"\tcqo\n"
++		"\timul r13 \n"
++		"\tmov r8, rax \n"   ; (mehane arg 1 * mone arg 2 ) = r8
++
++		
++
++		"\tpush r8  \n"  ;  mehane of new fraction
++		"\tpush r15\n"  ;   mone of new fraction
++		"\tcall gcd\n"
++
++		"\tmov r9, rax\n" ;  gcd result in r9 [reuse of r9  beacause i dont need the orginal value anymore]
++		"\tpop r15\n"
++		"\tpop r8\n"
++		"\tmov rax, r15\n"
++		"\tcqo\n"
++		"\tidiv r9  \n"  
++		"\tmov r15, rax \n" ; r15 = (mona / gcd)
++
++		"\tmov rax, r8\n"
++		"\tcqo\n"
++		"\tidiv r9\n"
++		"\tmov r8, rax  \n" ; r8 = (maehane / gcd)
++		"\tshl r15,30 \n";   r15 is mone 
++		"\tor r15, r8  \n"; with "or" turn r8 to mehane 
++
++		"\tshl r15, TYPE_BITS \n"; change the type   
++		"\tor r15, T_FRACTION\n"
++		
++
++		"CHECK_REDUCE_TO_INTEGER_MUL:\n"
++		"\tmov r8, r15\n"
++
++		"\tDATA_LOWER_MEIR r8 \n" ;mehane
++		"\tmov r9,r15\n"
++		"\tDATA_UPPER_MEIR r9  \n"  ;mone
++
++		"\tmov rax,r9\n"
++		"\tmov rdx,0\n"
++		"\tcqo\n"
++		"\tidiv r8\n"
++
++		"\tcmp rdx,0    \n" 	; rdx = remainder
++		"\tje Binary_mul_CHANGE_TO_INTEGER\n"
++		"\tmov rax, r15\n"
++		"\tjmp Binary_mul_END\n"
++
++		"Binary_mul_NO_PARAMETERS:\n"
++		"\tmov r9, 1\n"
++		"\tshl r9, TYPE_BITS\n"
++		"\tor r9, T_INTEGER\n"
++		"\tmov rax, r9\n"
++		"\tjmp Binary_mul_END\n"
++
++		"Binary_mul_CHANGE_TO_INTEGER:\n"
++		"\tshl rax, TYPE_BITS\n"
++		"\tor rax, T_INTEGER\n"
++
++		"\tjmp Binary_mul_END\n"
++
++		"Binary_mul_END:\n"
++		"\tpop rbp\n"
++		"\tret	\n"
++
++		"Binary_mul_body:\n"
++		"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , Binary_mul\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++
++	))))
++
++(define lib_binary_div
++	(lambda ()
++		(let ((label (get_fvar_label '/)))
++		(string-append
++
++		"\tjmp Binary_div_body\n"
++
++		"Binary_div:\n"
++		"\tpush rbp\n"
++		"\tmov rbp,rsp\n"
++		"\tmov r8, arg_count\n"
++		"\tcmp r8,1 \n"
++		"\tjne Binary_div_REGULAR \n"
++
++		"Binary_div_ONE_PARAMETER:\n"
++		"\tmov r8, 1\n"
++		"\tmov r9 , An(0)\n"
++		"\tjmp Base_condition\n"
++
++		"Binary_div_REGULAR:\n"
++		"\tmov r8 , 0\n"
++		"\tmov r8, An(0)\n"
++		"\tmov r9, An(1)\n"
++
++		"AFTER_CONDITIONS_OF_PARAMETERS_DIV:\n"
++		"\tmov r10, r8\n"
++		"\tmov r11, r9 \n"; transfer the args to temp register
++		"\tand r10, 15\n" ; put type of r8 in r10
++		"\tand r11, 15\n" ; put type of r9 in r11
++
++		"\tcmp r10, T_INTEGER\n" 		;check if first arg is intger 
++		"\tje CONVERT_ARG1_TO_FRACTION_DIV\n"
++			 
++		"\tjmp AFTER_ARG1_CHECKED_DIV\n"
++
++
++		"CONVERT_ARG1_TO_FRACTION_DIV:\n"
++		"\tmov rdi,r8\n"   			
++		"\tDATA_LOWER_MEIR rdi\n"
++	  	"\tshl rdi,30\n"		 ;mone
++		"\tmov rcx,1\n"  		;mahane
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		"\tmov r8,rdi\n"
++
++		"AFTER_ARG1_CHECKED_DIV:\n"
++		"\tcmp r11, T_INTEGER\n" ; check intger of first arg
++		"\tje CONVERT_ARG2_TO_FRACTION_DIV\n"
++			 
++		"\tjmp AFTER_ARG2_CHECKED_DIV\n"
++
++		"CONVERT_ARG2_TO_FRACTION_DIV:\n"
++		"\tmov rdi,r9\n"   
++		"\tDATA_LOWER_MEIR rdi\n"
++		"\tshl rdi,30\n" 				;mone
++		"\tmov rcx,1\n"  				;mahane
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		"\tmov r9,rdi\n"
++		   
++		"AFTER_ARG2_CHECKED_DIV:\n" 
++
++		"MUL_TWO_ARGS_FRACTION_DIV:\n"
++		"\tmov r10, r8\n"
++		"\tmov r11, r9\n"
++		"\tDATA_UPPER_MEIR r10\n" ; r10 = mone  arg 1 
++		"\tDATA_UPPER_MEIR r11\n"; r11 = mone  arg 2 
++		"\tmov r12, r8\n"
++		"\tmov r13, r9\n"
++		"\tDATA_LOWER_MEIR r12 \n";  r12 = mehane  arg 1
++		"\tDATA_LOWER_MEIR r13  \n"; r12 = mehane  arg 2
++
++		"\tmov rax, r10\n"
++		"\tcqo\n"
++		"\timul r13 \n" 	
++		"\tmov r15, rax \n"   ; (mehane arg 2 * mone arg 1) = r15 
++
++		"\tmov rax, r12\n"
++		"\tcqo\n"
++		"\timul r11 \n"
++		"\tmov r8, rax \n"   ; (mehane arg 1 * mone arg 2 ) = r8
++
++		
++
++		"\tpush r8  \n"  ;  mehane of new fraction
++		"\tpush r15\n"  ;   mone of new fraction
++		"\tcall gcd\n"
++
++		"\tmov r9, rax\n" ;  gcd result in r9 [reuse of r9  beacause i dont need the orginal value anymore]
++		"\tpop r15\n"
++		"\tpop r8\n"
++		"\tmov rax, r15\n"
++		"\tcqo\n"
++		"\tidiv r9  \n"  
++		"\tmov r15, rax \n" ; r15 = (mona / gcd)
++
++		"\tmov rax, r8\n"
++		"\tcqo\n"
++		"\tidiv r9\n"
++		"\tmov r8, rax  \n" ; r8 = (mehane / gcd)
++		
++
++		"\tcmp r8, 0\n" ; mehana cant be neg
++		"\tjg NO_NEG_MEHANE\n" ;;MABY MISTAK? 
++
++		"NEG_MEHANE:\n"
++		"\tneg r8\n"
++		"\tneg r15\n"
++
++		"NO_NEG_MEHANE:\n"
++		"\tshl r15,30 \n";   r15 is mone 
++		"\tor r15, r8  \n"; with "or" turn r8 to mehane 
++
++		"\tshl r15, TYPE_BITS \n"; change the type   
++		"\tor r15, T_FRACTION\n"
++		
++
++		"CHECK_REDUCE_TO_INTEGER_DIV:\n"
++		"\tmov r8, r15\n"
++
++		"\tDATA_LOWER_MEIR r8 \n" ;mehane
++		"\tmov r9,r15\n"
++		"\tDATA_UPPER_MEIR r9  \n"  ;mone
++
++		"\tmov rax,r9\n"
++		"\tmov rdx,0\n"
++		"\tcqo\n"
++		"\tidiv r8\n"
++
++		"\tcmp rdx,0    \n" 	; rdx = remainder
++		"\tje Binary_div_CHANGE_TO_INTEGER\n"
++		"\tmov rax, r15\n"
++		"\tjmp Binary_div_END\n"
++
++
++		"Binary_div_CHANGE_TO_INTEGER:\n"
++		"\tshl rax, TYPE_BITS\n"
++		"\tor rax, T_INTEGER\n"
++
++		"\tjmp Binary_div_END\n"
++		;*******************************************************
++		"Base_condition:\n"
++		"\tmov r11, r9\n"
++		"\tand r11, 15\n" ;check if the number is integer or fraction
++		"\tcmp r11, T_INTEGER\n"
++		"\tje return_frac\n"
++		"\tmov r8, 1\n"
++		"\tshl r8, TYPE_BITS\n"
++		"\tor r8, T_INTEGER\n"
++		"\tjmp AFTER_CONDITIONS_OF_PARAMETERS_DIV\n"
++
++
++		"return_frac:\n"
++		"\tcmp r9, 0\n"
++		"\tjg return_pos_frac\n"
++		"\tneg r8\n"
++		"\txor rcx, rcx\n"
++		"\tDATA r9\n"
++		"\tmov r15, r9\n"
++		"\tsub rcx, r15\n"
++		"\tmov r9, rcx\n"
++		"\tshl r9, TYPE_BITS\n"
++		"\t or r9, T_INTEGER\n"
++		
++
++		"return_pos_frac:\n"
++		"\tmov rdi,r8\n"   ;mone
++		"\tmov rcx,r9\n"   ;meane
++		"\tDATA_LOWER_MEIR rcx\n"
++		"\tshl rdi, 30\n"
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		;"\tjmp CHECK_REDUCE_TO_INTEGER_DIV\n";;*********************
++		"\tmov rax,rdi\n" ;new fraction
++
++
++		"Reduce_Fraction:\n"
++		"\tmov r13, rax\n"
++		"\tDATA_LOWER_MEIR r13 \n" ;mehane
++		"\tmov r14,rax\n"
++		"\tDATA_UPPER_MEIR r14\n" ;mone
++		"\tmov rax, r14\n"
++		"\tmov rdx, 0\n"
++		"\tcqo\n"
++		"\tidiv r13\n"
++		"\tcmp rdx, 0\n"
++		"\tje Binary_change\n"
++		"\tmov rax, rdi\n"
++		"\tjmp Binary_div_END\n"
++
++		"Binary_change:\n"
++		"\tshl rax, TYPE_BITS\n"
++		"\tor rax, T_INTEGER\n"
++
++		"Binary_div_END:\n"
++		"\tpop rbp\n"
++		"\tret	\n"
++
++		"Binary_div_body:\n"
++		"\t mov rbx , 0\n"
++		"\tMY_MALLOC(16)\n"
++		"\tMAKE_LITERAL_CLOSURE rax, rbx , Binary_div\n"
++		"\tmov rax, [rax]\n"
++		"\tmov qword ["label"], rax\n"
++
++	))))
++
++(define lib_binary_equal
++	(lambda ()
++		(let ((label (get_fvar_label '=)))
++		(string-append
++
++		"\tjmp Binary_equal_body\n"
++
++		"Binary_equal:\n"
++		"\tpush rbp\n"
++		"\tmov rbp,rsp\n"
++		"\tmov r8, arg_count\n"
++		"\tcmp r8,1 \n"
++		"\tje equal_TRUE \n"
++
++		"\tmov r8, An(0)\n"
++		"\tmov r9, An(1)\n"
++		"\tmov r10, r8\n"
++		"\tmov r11, r9 \n"; transfer the args to temp register
++		"\tand r10, 15\n" ; put type of r8 in r10
++		"\tand r11, 15\n" ; put type of r9 in r11
++
++		"\tcmp r10, T_INTEGER\n" 		;check if first arg is intger 
++		"\tje CONVERT_ARG1_TO_FRACTION_EQUAL\n"
++			 
++		"\tjmp AFTER_ARG1_CHECKED_EQUAL\n"
++
++
++		"CONVERT_ARG1_TO_FRACTION_EQUAL:\n"
++		"\tmov rdi,r8\n"   			
++		"\tDATA_LOWER_MEIR rdi\n"
++	  	"\tshl rdi,30\n"		 ;mone
++		"\tmov rcx,1\n"  		;mahane
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		"\tmov r8,rdi\n"
++
++		"AFTER_ARG1_CHECKED_EQUAL:\n"
++		"\tcmp r11, T_INTEGER\n" ; check intger of first arg
++		"\tje CONVERT_ARG2_TO_FRACTION_EQUAL\n"
++			 
++		"\tjmp AFTER_ARG2_CHECKED_EQUAL\n"
++
++		"CONVERT_ARG2_TO_FRACTION_EQUAL:\n"
++		"\tmov rdi,r9\n"   
++		"\tDATA_LOWER rdi\n"
++		"\tshl rdi,30\n" 				;mone
++		"\tmov rcx,1\n"  				;mahane
++		"\tor rdi,rcx\n" 
++		"\tshl rdi, TYPE_BITS\n"
++		"\tor rdi, T_FRACTION\n"
++		"\tmov r9,rdi\n"
++		   
++		"AFTER_ARG2_CHECKED_EQUAL:\n" 
++
++		"PLUS_TWO_ARGS_FRACTION_EQUAL:\n"
++		"\tmov r10, r8\n"
++		"\tmov r11, r9\n"
++		"\tDATA_UPPER_MEIR r10\n" ; r10 = mone  arg 1 
++		"\tDATA_UPPER_MEIR r11\n"; r11 = mone  arg 2 
++		"\tmov r12, r8\n"
++		"\tmov r13, r9\n"
++		"\tDATA_LOWER_MEIR r12 \n";  r12 = mehane  arg 1
++		"\tDATA_LOWER_MEIR r13  \n"; r12 = mehane  arg 2
++
++		"\tmov rax, r10\n"
++		"\tcqo\n"
++		"\timul r13 \n" 	
++		"\tmov r15, rax \n"   ; (mehane arg 2 * mone arg 1) = r15 
++
++		"\tmov rax, r11\n"
++		"\tcqo\n"
++		"\timul r12 \n"
++		"\tmov r14, rax \n"   ; (mehane arg 1 * mone arg 2 ) = r14
++
++		"\tcmp r15, r14\n"  ; now r15 is the result of adding multiplactions- (the mone of the new fraction) 
++		"\tje equal_TRUE\n"
++
++		"equal_FALSE:\n"
++		"\tmov rax, SOB_FALSE\n"
++		"\tjmp Binary_equal_END\n"
++
++		"equal_TRUE:\n"
++		"\tmov rax,SOB_TRUE\n"
++
++		"Binary_equal_END:	\n"
++		"\tpop rbp\n"
++		"\tret	\n"
++
++		"Binary_equal_body:\n"
++		"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , Binary_equal\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++
++	))))
++
++(define lib_numerator
++	(lambda ()
++		(let ((label (get_fvar_label 'numerator)))
++			(string-append
++
++			"\tjmp make_numerator_body\n"
++			"\tmake_numerator:\n"
++			"\tpush rbp\n"
++			"\tmov rbp,rsp\n"
++			"\tmov r9,An(0)\n"
++			"\tmov r10 , r9\n"
++			"\tand r10, 15\n"
++			"\tcmp r10, T_INTEGER\n"
++			"\tje numerator_END\n"
++			"\tDATA_UPPER_MEIR r9\n"
++			"\tshl r9, TYPE_BITS\n"
++			"\tor r9, T_INTEGER\n"
++			"\tjmp numerator_END\n"
++
++			"numerator_END:\n"
++			"\tmov rax, r9\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"make_numerator_body:\n"
++			"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_numerator\n"
++			"\tmov rax, [rax]\n"
++			"\tmov ["label"], rax\n"
++
++			))))
++
++(define lib_denominator
++	(lambda ()
++		(let ((label (get_fvar_label 'denominator)))
++			
++			(string-append
++			 
++			"\tjmp make_denominator_body\n"
++			"\tmake_denominator:\n"
++			"\tpush rbp\n"
++			"\tmov rbp,rsp\n"
++			"\tmov r9,An(0)\n"
++			"\tmov r10 , r9\n"
++			"\tand r10, 15\n"
++			"\tcmp r10, T_INTEGER\n"
++			"\tje integer_denominator\n"
++			"\tDATA_LOWER r9\n"
++			"\tshl r9, TYPE_BITS\n"
++			"\tor r9, T_INTEGER\n"
++			"\tjmp denominator_END\n"
++			
++			"integer_denominator:\n"
++			"\tmov r9, 1\n"
++			"\tshl r9, TYPE_BITS\n"
++			"\tor r9, T_INTEGER\n"
++
++			"denominator_END:\n"
++			"\tmov rax, r9\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"make_denominator_body:\n"
++			"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_denominator\n"
++			"\tmov rax, [rax]\n"
++			"\tmov ["label"], rax\n"
++
++			))))
++
++
++(define lib_cons 
++	(lambda ()
++		(let ((label (get_fvar_label 'cons)))
++		(string-append	
++			"\tjmp make_cons_body\n"
++
++			"\tmake_cons:\n"
++		 	"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++
++		 	"\tmov r9, An(0)\n"
++		 	"\tmov r8, An(1)\n"
++		 	"\tMY_MALLOC(8)\n"
++		 	"\tmov r11 , rax\n"  ;MY_MALLOC return pointer in rax 
++		 	"\tmov [r11] , r9\n" ; we put in the value of malloc first elemen
++		 	"\tMY_MALLOC(8)\n"
++		 	"\tmov r10,rax\n" ;MY_MALLOC return pointer in rax 
++		 	"\tmov [r10], r8\n" ; we put in the value of malloc second element
++		 	"\tMY_MALLOC(8)\n"
++		 	"\tMAKE_MALLOC_LITERAL_PAIR rax , r11 ,r10\n"
++		 	"\tmov rax, qword [rax]\n"
++
++			"\tpop rbp\n"
++		 	"\tret\n" 
++
++
++
++		 	"make_cons_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_cons\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++		))))
++
++(define lib_remainder
++	(lambda ()
++		(let ((label (get_fvar_label 'remainder)))
++			(string-append
++			"\tjmp make_remainder_body\n"
++			"\tmake_remainder:\n" ; in remainder in scheme the argument need to be integers 
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r10, An(0)\n" ; first arg
++			"\tmov r11,An(1)\n" ; second arg 
++
++			"\tDATA r10\n"
++			"\tDATA r11\n"
++			"\tmov rax, r10\n" 
++			"\tmov rdx,0\n"
++			"\tcqo\n"
++			"\tidiv r11\n"  ; after the div the remain in rdx 
++			"\tmov r10,rdx \n" ; mov the remain to r10
++			"\tshl r10, TYPE_BITS\n"
++			"\tor r10, T_INTEGER\n"
++			"\tmov rax, r10\n"
++		 	"\tpop rbp\n"
++		 	"\tret \n"
++
++
++		 	"make_remainder_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_remainder\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++		))))
++
++(define lib_char_to_integer
++	(lambda ()
++		(let ((label (get_fvar_label 'char->integer)))
++			(string-append
++			"\tjmp char_to_integer_body\n"
++			"\tchar_to_integer:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r9, An(0)\n"
++			"\tDATA r9\n"
++			"\tshl r9, TYPE_BITS\n"
++			"\tor r9, T_INTEGER\n"
++			"\tmov rax, r9\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"char_to_integer_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , char_to_integer\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_integer_to_char
++	(lambda ()
++		(let ((label (get_fvar_label 'integer->char)))
++
++			(string-append
++				
++			"\tjmp integer_to_char_body\n"
++			"integer_to_char:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r8, An(0)\n"
++			"\tDATA r8\n"
++			"\tshl r8, TYPE_BITS\n"
++			"\tor r8, T_CHAR\n"
++			"\tmov rax, r8\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"integer_to_char_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , integer_to_char\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_string_length 
++	(lambda ()
++		(let ((label (get_fvar_label 'string-length)))
++			(string-append
++			"\tjmp string_length_body\n"
++			
++			"make_string_length:\n"
++			"\tpush rbp\n"
++		 	"\tmov rbp, rsp\n"
++		 	"\tpush r15\n"  ; save the register of define very important 
++		 	"\tmov r15, An(0)\n" ; the first element in stack
++		 	"\tSTRING_LENGTH r15\n"  ; return the length
++			"\tshl r15, TYPE_BITS\n"
++			"\tor r15, T_INTEGER\n"  ; transform to int in run time 
++			"\tmov rax, r15\n"
++			"\tpop r15 \n"   ; save the register of define very important
++		 	"\tpop rbp\n"
++		 	"\tret\n"
++
++			"string_length_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_string_length\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++
++			))))
++
++(define lib_string_ref
++	(lambda ()
++		(let ((label (get_fvar_label 'string-ref)))
++			(string-append
++
++			"\tjmp string_ref_body\n"
++			"\tmake_string_ref:\n"
++		 	"\tpush rbp\n"
++		 	"\tmov rbp, rsp\n"
++		 	"\tmov r14 , An(0)\n" ; the string 
++			"\tmov r12, An(1)\n" ; the index
++			"\tDATA r12\n" ; we want the number not pointer
++			"\tSTRING_REF bl, r14, r12  \n" ; the meir implenation of STRING_REF in bl will be the result beacause mayer make move byte in the macro
++			"\tshl rbx, TYPE_BITS \n"; the result in bl so that we make place to the TYPE (char)
++			"\tor rbx, T_CHAR\n"  ; transform to char in run time
++			"\tmov rax, rbx\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++
++			"string_ref_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_string_ref\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++
++			))))
++
++(define lib_string_set
++	(lambda () 
++		(let ((label (get_fvar_label 'string-set!)))
++			(string-append
++
++			"\tjmp string_set_body\n"
++			"make_string_set:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++			"\tmov r13, An(0)\n" ; first element the string 	
++			"\tmov r15, An(1)\n" ; second element the index
++			"\tmov r14, An(2)\n" ; third element the char i want to replace 
++			 	
++			"\tDATA r15\n"
++		 	"\tDATA r14	\n"
++		 	"\tSTRING_ELEMENTS r13\n"
++		 	"\tadd r13, r15\n"
++			"\tmov rax, r13\n"
++			"\tmov byte [rax], r14b \n"
++		 	"\tmov rax, SOB_VOID\n"
++		 	"\tpop rbp\n"
++		 	"\tret\n"
++
++			"string_set_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_string_set\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++
++(define lib_symbol_to_string
++	(lambda ()
++		(let ((label (get_fvar_label 'symbol->string)))
++			(string-append
++			"\tjmp symbol_to_string_body\n"
++			"\tsymbol_to_string:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++
++			"\tmov r9, An(0)\n"
++			"\tDATA r9\n"
++			"\tadd r9 , start_of_data\n"
++			"\tmov r10 , [r9] \n"
++			"\tmov rax , r10 \n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"symbol_to_string_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , symbol_to_string\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++
++(define lib_string_to_symbol
++	(lambda ()
++		(let ((label (get_fvar_label 'string->symbol)))
++			(string-append
++			"\tjmp string_to_symbol_body\n"
++
++			"\tstring_to_symbol:\n"
++			"\tpush rbp\n"
++			"\tmov rbp, rsp\n"
++
++			"\tmov r9, An(0)\n"
++			
++			"\tmov r13 , qword[symbol_table] \n" ;r13 has the adress that symbol table point to
++			"\tcmp r13, SOB_NIL \n" 
++			"\tje add_new_symbol_to_empty_table\n"
++
++			"search_in_symbol_table:\n"
++			"\tmov r14, [r13]\n"  ;r14 is the label of the symbol in the current pair - r13. 
++			"\tDATA r14\n"   ;mabey not ?1
++			"\tadd r14 , start_of_data\n" ;mabey not ?!
++			"\tmov r11 , [r14]\n"  ;r11 has the string label of the symbol
++			"\tcmp r11, r9\n" ;cmpare the string labels
++			"\tje ret_the_symbol\n" ;equal - return the symbol 
++			"\tmov r12 , [r13+8]\n"  ; adress of the next next pair 
++			"\tcmp r12 , SOB_NIL \n" ;the current pair is the last pair , so create new symbol
++			"\tje add_new_symbol_to_table\n"  
++			"\tmov r13, r12\n" ; "inc" the pair
++			"\tjmp search_in_symbol_table\n"
++
++			"ret_the_symbol:\n"
++			"\tmov rax, [r13]\n"  ;return the label of the symbol
++			"\tjmp string_to_symbol_END\n"
++
++			"add_new_symbol_to_table:\n"
++			"\tMY_MALLOC (8)\n"   ; create symbol
++            "\tmov r15, rax\n"
++            "\tmov qword[r15] , r9 \n"
++            "\tsub r15 , start_of_data \n"
++            "\tshl r15 ,TYPE_BITS\n"
++            "\tor r15 , T_SYMBOL\n"
++
++            "\tMY_MALLOC(16)\n"  ;create pair to add to symbol table
++            "\tmov r10 , rax\n"
++            "\tmov [r10] , r15\n"
++            "\tmov qword[r10+8] , SOB_NIL\n"
++
++            "\tmov [r13+8] , r10\n"  ;change the last pair to point the new pair 
++            "\tmov rax ,r15\n"
++            "\tjmp string_to_symbol_END \n"
++
++            "add_new_symbol_to_empty_table:\n"
++			"\tMY_MALLOC (8)\n"   ; create symbol
++            "\tmov r15, rax\n"
++            "\tmov qword[r15] , r9 \n"
++            "\tsub r15 , start_of_data \n"
++            "\tshl r15 ,TYPE_BITS\n"
++            "\tor r15 , T_SYMBOL\n"
++
++            "\tMY_MALLOC(16)\n"  ;create pair to add to symbol table
++            "\tmov r10 , rax\n"
++            "\tmov [r10] , r15\n"
++            "\tmov qword[r10+8] , SOB_NIL\n"
++            ;"\tMAKE_MALLOC_LITERAL_PAIR r10 ,  r15  , SOB_NIL\n"
++            "\tmov r12 , qword[symbol_table]\n"
++            "\tmov r12 , r10\n"
++            "\tmov rax ,r15\n"
++            "\tjmp string_to_symbol_END \n"	
++
++			"string_to_symbol_END:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"string_to_symbol_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , string_to_symbol\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++
++(define lib_vector_length
++	(lambda ()
++		(let ((label (get_fvar_label 'vector-length)))
++			(string-append
++			"\tjmp vector_length_body\n"
++			
++			"make_vector_length:\n"
++		 	"\tpush rbp\n"
++		 	"\tmov rbp, rsp\n"
++		 	"\tpush r15  \n"; save the register of define very important 
++		 	"\tmov r15, An(0)\n"
++		 	"\tVECTOR_LENGTH r15 \n" ; the meir implenation of VECTOR_LENGTH
++			"\tshl r15, TYPE_BITS\n"
++			"\tor r15, T_INTEGER \n" ; transform to int in run time 
++			"\tmov rax, r15\n" 
++			"\tjmp vector_length_END\n"
++			
++			"return_empty_vector:\n"
++			"\tmov rax, 0\n"
++
++			"vector_length_END:\n"
++			"\tpop r15   \n"; save the register of define very important
++		 	"\tpop rbp\n"
++		 	"\tret\n"
++
++			"vector_length_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_vector_length\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_vector_ref
++	(lambda ()
++		(let ((label (get_fvar_label 'vector-ref)))
++			(string-append
++
++			"\tjmp vector_ref_body\n"
++			"make_vector_ref:\n"
++			"\tpush rbp\n"
++		 	"\tmov rbp, rsp\n"
++			"\tmov r14 , An(0)\n" ; the vector 
++			"\tmov r15, An(1)\n" ; the index
++			"\tDATA r15\n" ; we want the number not pointer
++			"\tVECTOR_REF r13, r14, r15\n"   ; the meir implenation of VECTOR_REF in r14 will be the result
++			"\tmov rax, r13\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"vector_ref_body:\n"
++		 	"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_vector_ref\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_vector_set
++	(lambda ()
++		(let ((label (get_fvar_label 'vector-set!)))
++			(string-append
++				"\tjmp vector_set_body\n"
++				
++				"make_vector_set:\n"
++			  	"\tpush rbp\n"
++			 	"\tmov rbp, rsp\n"
++			 	"\tmov r15, An(0)\n" ; first element of the vector 	
++			 	"\tmov r12, An(1)\n" ; second element of the index
++			 	"\tmov r13, An(2)\n" ; third element the object i want to replace 
++			  	"\tDATA r12\n"  ; need the specific index so need the data
++				"\tVECTOR_SET r10, r15, r12, r13\n"
++			 	"\tmov rax, SOB_VOID\n"
++			 	"\tpop rbp\n"
++			 	"\tret\n"
++
++				"\nvector_set_body:\n"
++				"\t mov rbx , 0\n"
++				"\tMY_MALLOC(16)\n"
++				"\tMAKE_LITERAL_CLOSURE rax, rbx , make_vector_set\n"
++				"\tmov rax, [rax]\n"
++				"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_make_apply
++	(lambda ()
++		(let ((label (get_fvar_label 'apply)))
++			(string-append
++
++			"\tjmp apply_body\n"
++			"make_apply:\n"
++
++			 "\tpop r8\n" ;ret
++			 "\tpop r9\n" ;env
++			 "\tpop r9\n" ;n
++			 "\tpop r10\n" ; operator
++			 "\tpop r12\n" ;  start list
++
++			"\tmov rdi,1\n"
++			"\tmov r13,r12 \n"; the list 
++
++			"Num_of_operands:\n"
++			"\tCDR r13 \n"; point to value of cdr
++			"\tcmp r13, SOB_NIL\n"
++			"\tje Num_of_operands_EXIT\n"
++			"\tadd rdi, 1\n"
++			"\tjmp Num_of_operands\n"
++
++			"Num_of_operands_EXIT:\n"
++			"\tmov r15,rdi\n"
++			"\tshl r15,3\n"
++			"\tsub rsp , r15\n" ;rsp in the bootom of operands,put operands by the rsp 
++			"\tmov r15,rsp \n"; put element
++			"\tmov r13,r12 \n"; the list 
++
++			"Push_operands_loop:\n"
++			"\tmov r14,r13\n" ;save the list 
++			"\tCAR r13 \n"; point to value of car
++			"\tmov [r15],r13\n"
++			"\tadd r15, 8\n"
++			"\tCDR r14\n"
++			"\tcmp r14, SOB_NIL\n"
++			"\tje Update_stack\n"
++			"\tmov r13,r14 \n";the next node
++			"\tjmp Push_operands_loop\n"
++
++
++			"Update_stack:\n"
++			"\tpush rdi \n"; push new n 
++			"\tmov r15,r10\n"
++			"\tCLOSURE_ENV r15\n"
++			"\tpush r15 \n" ;push  new env
++			"\tpush r8\n" ; push ret
++			"\tmov r15,r10\n"
++			"\tCLOSURE_CODE r15\n"
++			"\tjmp r15\n"
++
++			"apply_body:\n"
++			"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_apply\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++
++			))))
++
++(define lib_grater
++	(lambda ()
++		(let ((label (get_fvar_label '>)))
++			(string-append
++
++			"\tjmp grater_body\n"
++			"make_grater:\n"
++			"\tpush rbp\n"
++			"\tmov rbp,rsp\n"
++			"\tmov r15, arg_count\n"
++			"\tcmp r15, 1\n"
++			"\tje grater_True\n"
++			"\tmov r8, An(0)\n"
++			"\tmov r9, An(1)\n"
++			"\tmov r10, r8\n"
++			"\tmov r11, r9\n" ; and - transfer the args to temp
++			"\tand r10, 15\n" 
++			"\tand r11, 15\n" 
++
++
++			"\tcmp r10, T_INTEGER\n" ; check if integer arg1
++			"\tje CONVERT_ARG1_TO_FRACTION_grater\n"
++			 
++			"\tjmp AFTER_ARG1_CHECKED_grater\n"
++
++
++			"CONVERT_ARG1_TO_FRACTION_grater:\n"
++			"\t mov rdi,r8\n"   ;arg1 is integer
++			"\tDATA_LOWER_MEIR rdi\n"
++			"\tshl rdi,30\n" ;nominator
++			"\tmov rcx,1\n"  ;dominator
++			"\tor rdi,rcx\n" 
++			"\tshl rdi, TYPE_BITS\n"
++			"\tor rdi, T_FRACTION\n"
++			"\tmov r8,rdi\n"
++
++
++			"AFTER_ARG1_CHECKED_grater:\n"
++			"\tcmp r11, T_INTEGER\n" ; check if integer arg2
++			"\tje CONVERT_ARG2_TO_FRACTION_grater\n"
++			"\tjmp AFTER_ARG2_CHECKED_grater\n"
++
++			 "CONVERT_ARG2_TO_FRACTION_grater:\n"
++			 "\tmov rdi,r9\n"   ;arg2 integer
++			 "\tDATA_LOWER rdi\n"
++			 "\tshl rdi,30\n" ;nominator
++			 "\tmov rcx,1\n"  ;dominator
++			 "\tor rdi,rcx\n" 
++			 "\tshl rdi, TYPE_BITS\n"
++			 "\tor rdi, T_FRACTION\n"
++			 "\tmov r9,rdi\n"
++				 
++				  
++			"AFTER_ARG2_CHECKED_grater:\n"
++			"PLUS_TWO_ARGS_FRACTION_grater:\n"
++			"\t	mov r10, r8\n"
++			"\tmov r11, r9\n"
++			"\tDATA_UPPER_MEIR r10\n" ;r10 = nominator of arg 1 
++			"\tDATA_UPPER_MEIR r11\n";r11 = nominator of arg 2 
++			"\tmov r12, r8\n"
++			"\tmov r13, r9\n"
++			"\tDATA_LOWER_MEIR r12\n" ; r12 = denominator of arg 1
++			"\tDATA_LOWER_MEIR r13\n"  ; r13 = denominator of arg 2
++
++			"\tmov rax, r10\n"; 
++			"\tcqo\n"
++			"\timul r13 \n"; multiply dominator arg2 nominator arg1 = rax 
++			"\tmov r15, rax\n" ; result in r15 
++
++			"\tmov rax, r11\n";  
++			"\tcqo\n"
++			"\timul r12\n" ; multiply denominator arg1 with nominator arg2 = rax 
++			"\tmov r14, rax\n" ;result = r14
++				
++			"\tcmp r15, r14 \n"  ; compare for "mahane meshutaf" 
++			"\tjg grater_True\n"
++
++			"grater_False:\n"
++			"\tmov rax, SOB_FALSE\n"
++			"\tjmp grater_EXIT\n"
++
++
++			"grater_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++
++
++			"grater_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++			"grater_body:\n"
++			"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_grater\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define lib_smaller
++	(lambda ()
++		(let ((label (get_fvar_label '<)))
++			(string-append
++
++			"\tjmp smaller_body\n"
++			"make_smaller:\n"
++			"\tpush rbp\n"
++			"\tmov rbp,rsp\n"
++			"\tmov r15, arg_count\n"
++			"\tcmp r15, 1\n"
++			"\tje smaller_True\n"
++			"\tmov r8, An(0)\n"
++			"\tmov r9, An(1)\n"
++			"\tmov r10, r8\n"
++			"\tmov r11, r9\n" ; and - transfer the args to temp
++			"\tand r10, 15\n" 
++			"\tand r11, 15\n" 
++
++
++			"\tcmp r10, T_INTEGER\n" ; check if integer arg1
++			"\tje CONVERT_ARG1_TO_FRACTION_smaller\n"
++			 
++			"\tjmp AFTER_ARG1_CHECKED_smaller\n"
++
++
++			"CONVERT_ARG1_TO_FRACTION_smaller:\n"
++			"\t mov rdi,r8\n"   ;arg1 is integer
++			"\tDATA_LOWER_MEIR rdi\n"
++			"\tshl rdi,30\n" ;nominator
++			"\tmov rcx,1\n"  ;dominator
++			"\tor rdi,rcx\n" 
++			"\tshl rdi, TYPE_BITS\n"
++			"\tor rdi, T_FRACTION\n"
++			"\tmov r8,rdi\n"
++
++
++			"AFTER_ARG1_CHECKED_smaller:\n"
++			"\tcmp r11, T_INTEGER\n" ; check if integer arg2
++			"\tje CONVERT_ARG2_TO_FRACTION_smaller\n"
++			"\tjmp AFTER_ARG2_CHECKED_smaller\n"
++
++			 "CONVERT_ARG2_TO_FRACTION_smaller:\n"
++			 "\tmov rdi,r9\n"   ;arg2 integer
++			 "\tDATA_LOWER rdi\n"
++			 "\tshl rdi,30\n" ;nominator
++			 "\tmov rcx,1\n"  ;dominator
++			 "\tor rdi,rcx\n" 
++			 "\tshl rdi, TYPE_BITS\n"
++			 "\tor rdi, T_FRACTION\n"
++			 "\tmov r9,rdi\n"
++				 
++				  
++			"AFTER_ARG2_CHECKED_smaller:\n"
++			"PLUS_TWO_ARGS_FRACTION_smaller:\n"
++			"\t	mov r10, r8\n"
++			"\tmov r11, r9\n"
++			"\tDATA_UPPER_MEIR r10\n" ;r10 = nominator of arg 1 
++			"\tDATA_UPPER_MEIR r11\n";r11 = nominator of arg 2 
++			"\tmov r12, r8\n"
++			"\tmov r13, r9\n"
++			"\tDATA_LOWER_MEIR r12\n" ; r12 = denominator of arg 1
++			"\tDATA_LOWER_MEIR r13\n"  ; r13 = denominator of arg 2
++
++			"\tmov rax, r10\n"; 
++			"\tcqo\n"
++			"\timul r13 \n"; multiply dominator arg2 nominator arg1 = rax 
++			"\tmov r15, rax\n" ; result in r15 
++
++			"\tmov rax, r11\n";  
++			"\tcqo\n"
++			"\timul r12\n" ; multiply denominator arg1 with nominator arg2 = rax 
++			"\tmov r14, rax\n" ;result = r14
++				
++			"\tcmp r15, r14 \n"  ; compare for "mahane meshutaf" 
++			"\tjl smaller_True\n"
++
++			"smaller_False:\n"
++			"\tmov rax, SOB_FALSE\n"
++			"\tjmp smaller_EXIT\n"
++
++
++			"smaller_True:\n"
++			"\tmov rax, SOB_TRUE\n"
++
++
++			"smaller_EXIT:\n"
++			"\tpop rbp\n"
++			"\tret\n"
++
++			"smaller_body:\n"
++			"\t mov rbx , 0\n"
++			"\tMY_MALLOC(16)\n"
++			"\tMAKE_LITERAL_CLOSURE rax, rbx , make_smaller\n"
++			"\tmov rax, [rax]\n"
++			"\tmov qword ["label"], rax\n"
++			))))
++
++(define const_table_to_ass
++	(lambda ()
++        (let ((i (- START_MEMORY 1)))
++            (fold-left
++                string-append
++                (string-append
++                
++                	"section .data \n "
++					"start_of_data:" " \n"
++					"sobVoid: \n" "\t dq SOB_VOID \n"
++					"sobNil: \n" "\t dq SOB_NIL \n"
++					"sobFalse: \n" "\t dq SOB_FALSE \n"
++					"sobTrue: \n" "\t dq SOB_TRUE \n"  )
++
++                (cMap (lambda (row)
++                	(if (list? row)
++                	        (let ((label (caaddr row))
++                	        		(item (cadr  row)))
++                        		(cond 
++                        			((equal? "sobInt" (substring label 0 6)) 
++                        				(string-append label ": \n" "\t dq MAKE_LITERAL(T_INTEGER, " (to_string item) ") \n"))
++                        			((equal? (string-length label) 6) "")
++                        			((equal? "sobChar" (substring label 0 7))
++                        				(let* ((char_label (helper_label item))) 
++                        					(string-append label ": \n" "\t dq MAKE_LITERAL(T_CHAR, "char_label ") \n")))
++                        			((equal? "sobFrac" (substring label 0 7))
++                        				(string-append label ": \n" "\t dq MAKE_LITERAL_FRACTION(" (cadr(caddr row)) "," (caddr (caddr row)) ") \n"))
++                        			((equal? "sobPair" (substring label 0 7))
++                        				(string-append label ": \n" "\t dq MAKE_LITERAL_PAIR(" (cadr(caddr row)) "," (caddr (caddr row)) ") \n"))
++                        			((or (equal? (string-length label) 7) (equal? (string-length label) 8)) "")
++                        			((equal? "sobString" (substring label 0 9))
++                        				(string-append label ": \n" "\t MAKE_LITERAL_STRING  \"" item "\"\n") )
++                        			((equal? "sobSymbol" (substring label 0 9))
++                        				(let ((strLabel (get_label (to_string item) const_table ))) 
++                        				(string-append label ": \n" "\t dq MAKE_LITERAL_SYMBOL(" strLabel ")\n") ))
++                        			((equal? "sobVector" (substring label 0 9)) 
++                        				(if (= (vector-length item) 0)
++                        					(string-append label ": \n" "\t" "dq MAKE_LITERAL(T_VECTOR," (number->string 0) ")\n" )
++                        					(string-append label ": \n" "\t" "MAKE_LITERAL_VECTOR " (get_vector_labels (cdr (cdaddr row))) " \n")))
++                        			(else "ERROR TABLE ASSEMBLY")
++                        		)
++                        )
++                        ""))
++                    const_table))))
++)
++
++(define helper_label
++	(lambda (item)
++		(cond ((eq? item #\nul) "CHAR_NUL")
++			  ((eq? item #\newline) "CHAR_NEWLINE")
++			  ((eq? item #\tab) "CHAR_TAB")
++			  ((eq? item #\page) "CHAR_PAGE")
++			  ((eq? item #\return)"CHAR_RETURN")
++			  ((eq? item #\space) "CHAR_SPACE")
++			(else (to_string (char->integer item))))
++	) 
++)
++
++
++(define get_vector_labels
++	(lambda (lst)
++		(if (null? lst) 
++			(string-append "")
++			(letrec ((loop 
++				(lambda (lst)
++					(if (null? (cdr lst))
++						(string-append (car lst))
++						(string-append (car lst) ", " (loop (cdr lst)))
++					)
++				)))
++			(loop lst))
++		)
++	)
++)
++
++(define defult_symbol_table_to_ass
++	(lambda ()
++		(string-append
++			"symbol_table: \n"
++			"\tdq SOB_NIL\n"
++		)
++	)
++)
++
++
++
++
++(define symbol_table_to_ass
++    (lambda ()
++    (string-append
++    	"" 
++        (if (not (equal? symbol_table '()))
++           (string-append
++           	"test1:\n"
++            "\tMY_MALLOC(16)\n" ;create first pair
++            "\tmov r8, rax\n"  ;address first pair
++            "\tmov r9 , qword[symbol_table]\n"  ;symbol table point
++            "\tmov r9 , r8\n"  ;symbol table point to adress firat pair
++            ;"\tmov [r8+8] , SOB_NIL\n "
++            "\tpush r8\n" ;push adress to the stack
++           (letrec ((loop 
++                        (lambda (symLst)
++                        (if (null? (cdr symLst))
++                            (string-append 
++                                "\tpop r8\n"
++                                "\tmov qword[r8] , " (car symLst)" \n" 
++                                "\tmov qword[r8 + 8] , SOB_NIL\n" 
++                            )
++                            (string-append
++                                "\tpop r8\n" ;adress current node - pop from the stack
++                                "\tmov qword[r8] , " (car symLst)" \n"
++                                "\tMY_MALLOC (16)\n" ;create next pair
++                                "\tmov r9, rax\n" ; ;r9 have the adress for next pair
++                                "\tmov [r8 +8] , r9\n"
++                               ; "\tMAKE_MALLOC_LITERAL_PAIR r8 , " (car symLst)  " , r9 \n" 
++                                "\tpush r9\n"  ; enter the next node to the stack
++                                (loop (cdr symLst))
++                            )
++
++                        ))))
++           (loop symbol_table)
++        ))
++       ""))
++    )
++)
++
++(define global_table_to_ass
++	(lambda ()
++        (fold-left
++            string-append
++            ""
++            (cMap (lambda (row)
++            	(if (list? row)
++                    (string-append
++                    	(cadr row) ":\n"
++                        "\t dq SOB_UNDEFINED \n")
++                ""))
++                  global_table)))
++)
++
++(define to_string
++    (lambda (exp)
++        (letrec ((loop
++        	(lambda (arg) 
++        		(cond 
++        			 ((null? arg) "")
++        			 ((number? arg) (number->string arg))
++              		 ((symbol? arg) (symbol->string arg))
++              		 ((char? arg) (number->string (char->integer arg)))
++             		  ((list? arg)  (string-append (loop (car arg)) (loop (cdr arg))))
++              (else arg)))))
++        (loop exp)
++    )))
++
++(define TEST_tables
++	(lambda (exp)
++		(constract_lists exp)
++		(constract_tables)
++		;const_table
++		(constract_assembly_table)
++	)
++)
++
++ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; CODE GENERATION ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
++(define count_label_if 0)
++(define count_label_or 0)
++(define cgen_sub_prog 0)
++(define counter_lambda 0)
++(define counter_applic 0)
++(define counter_lambda_opt 0)
++(define counter_Tc-applic 0)
++
++(define get_label_counter
++    (lambda (counter)
++    	 (cond
++    		((equal? counter 'count_label_if) (set! count_label_if (+ count_label_if 1)) (number->string count_label_if))
++    		((equal? counter 'count_label_or) (set! count_label_or (+ count_label_or 1)) (number->string count_label_or))
++    		((equal? counter 'count_label_lambda) (set! counter_lambda (+ counter_lambda 1)) (number->string counter_lambda))
++    		((equal? counter 'counter_label_lambda_opt) (set! counter_lambda_opt (+ counter_lambda_opt 1)) (number->string counter_lambda_opt))
++    		((equal? counter 'counter_label_applic) (set! counter_applic (+ counter_applic 1)) (number->string counter_applic))
++    		((equal? counter 'counter_label_Tc-applic) (set! counter_Tc-applic (+ counter_Tc-applic 1)) (number->string counter_Tc-applic))
++    		(else (string-append "no_such_counter : " counter))) 
++            ))
++
++
++(define env -1)
++
++(define code_gen 
++	(lambda (pe env)
++			(cond 
++				((itIs? 'const pe) (let ((label (get_label (cadr pe) const_table )))
++										(string-append "\tmov rax , [" label "]\n")))
++				((itIs? 'seq pe) (code_gen_seq (cadr pe) env))
++				((itIs? 'if3 pe) (code_gen_if (cdr pe) (get_label_counter 'count_label_if) env))
++				((itIs? 'or pe) (code_gen_or (cadr pe) (get_label_counter 'count_label_or) env))
++				((itIs? 'pvar pe) (let ((minor (number->string (caddr pe))))
++										(string-append "\tmov rax , qword [rbp + (4 + " minor ") * 8 ]\n")))
++				((itIs? 'bvar pe) (code_gen_bvar (cdr pe) env))
++				((itIs? 'fvar pe) (code_gen_fvar (cdr pe) env))
++				((itIs? 'define pe) (code_gen_def (cdr pe) env))
++				((itIs? 'set pe) (code_gen_set (cdr pe) env))
++				((itIs? 'lambda-simple pe) (code_gen_lambda_simple (cdr pe) (get_label_counter 'count_label_lambda) (+ env 1)) )
++				((itIs? 'lambda-opt pe) (code_gen_lambda_opt (cdr pe) (get_label_counter 'counter_label_lambda_opt) (+ env 1)))
++				((itIs? 'applic pe) (code_gen_applic (cdr pe) (get_label_counter 'counter_label_applic) env))
++				((itIs? 'tc-applic pe) (code_gen_tc_applic (cdr pe) (get_label_counter 'counter_label_Tc-applic) env))
++				((itIs? 'box pe) (code_gen_box (cdr pe) env))
++				((itIs? 'box-set pe) (code_gen_box_set (cdr pe) env))
++				((itIs? 'box-get pe) (code_gen_box_get (cdr pe) env))
++			
++				(else error "stop!_not_in_code_gen_:\n")
++		)
++	)
++)
++
++(define itIs? 
++	(lambda (form exp)
++		(if (pair? exp)
++			(equal? (car exp) form)
++			#f
++		)
++	)
++)
++
++(define code_gen_seq
++	(lambda (expLst env)
++		(letrec ((loop
++				(lambda (lst env)
++					(if (equal? (cdr lst) '())
++						(code_gen (car lst) env); the answer need to be in rax , probably there. 
++						(string-append (code_gen (car lst) env) (loop (cdr lst) env)))
++				))) 
++	(loop expLst env))
++	)
++) 
++
++(define code_gen_if
++	(lambda (lst counter env)
++		(let ((test (car lst))
++				(dit (cadr lst))
++				(dif (caddr lst)))
++			(string-append 
++				(code_gen test env) "\n"
++				"\tcmp rax , SOB_FALSE" "\n"
++				"\tje L_if_false_" counter "\n"
++				(code_gen dit env) "\n"
++				"\tjmp L_if_end_" counter "\n"
++				"L_if_false_" counter": \n"
++				(code_gen dif env) "\n"
++				"L_if_end_" counter ": \n"
++			)
++		)
++	) 
++)
++
++(define code_gen_or
++	(lambda (lst counter env)
++
++		 (string-append
++		 	(code_gen (car lst) env)
++                (fold-right
++                    string-append
++                    ""
++                    (map (lambda (el)
++                            (string-append "\tcmp rax , SOB_FALSE\n"
++                                        "\tjne L_or_exit_" counter"\n"
++                                        (code_gen el env)))
++                        (cdr lst)))
++                "L_or_exit_" counter ":\n"
++		)
++	) 
++) 
++
++(define code_gen_bvar 
++	(lambda (lst env)
++		(let ((param (car lst))
++				(ma (number->string (* 8 (cadr lst))))
++				(mi (number->string (* 8 (caddr lst)))))
++			(string-append
++				"\tmov rax , qword [rbp + 2*8] \n"
++				"\tmov rax , qword [rax + " ma " ] \n" 
++				"\tmov rax , qword [rax + "  mi "] \n"  
++			)
++		)
++	)
++)
++
++(define code_gen_fvar
++	(lambda (e env)
++		;(display e)
++		(let ((label (get_fvar_label (car e))))
++			(string-append
++			;"Label_fvar:\n"
++			"\tmov rax , qword [" label "] \n"
++			)
++		)
++	)
++)
++
++(define code_gen_def
++	(lambda (lst env)
++		(let* ((v (cadar lst))
++			  (defination (cadr lst))
++			  (label (get_fvar_label v)))
++			(string-append 
++				(code_gen defination env)
++				;"Label_define:\n"
++				"\tmov rbx , " label " \n"
++				"\tmov [rbx] , rax \n"
++				"\tmov rax , SOB_VOID \n"				
++			)
++		)
++
++	)
++)
++
++(define code_gen_set 
++	(lambda (exp env)
++		(let ((first (car exp))
++			  (second (cadr exp)))
++			(cond 
++				((equal? (car first) 'pvar)
++					(let ((mi (number->string (caddr first))))
++						(string-append
++							;"Label_set_pvar:\n"
++							(code_gen second env)
++							"\tmov qword[rbp + (4 + " mi ") * 8 ] , rax\n"
++							"\tmov rax , SOB_VOID \n"
++						)
++					))
++				((equal? (car first) 'bvar)
++					(let ((ma (number->string (caddr first)))
++						  (mi (number->string (cadddr first))))
++						(string-append 
++							;"Label_set_bvar:\n"
++							(code_gen second env)
++							"\tmov rbx , qword[rbp + 2 * 8] \n"
++							"\tmov rbx , qword[rbx + " ma " * 8] \n"
++							"\tmov qword[rbx + " mi " * 8 ] , rax \n"
++							"\tmov rax , SOB_VOID \n"
++						)
++					))
++				((equal? (car first) 'fvar)
++					(let ((label (get_fvar_label (cadr first))))
++						(string-append
++							;"Label_set_fvar:\n"
++							(code_gen second env)
++							"\tmov ["label "], rax\n"
++							"\tmov rax, SOB_VOID\n"
++						)
++				))
++				(else "error : code gen set impossible")
++			)
++		)
++	)
++)
++
++(define code_gen_box
++	(lambda (var env)
++		(string-append
++			(code_gen (car var) env)
++			"\tmov rbx, rax\n" ;save var
++			"\tMY_MALLOC(8)\n" ;create place to pointer
++			"\tmov qword[rax], rbx\n" ;wrap var in the pointer
++		)
++	)
++)
++(define code_gen_box_set
++	(lambda (lst env)
++			(let ((var_exp (car lst))
++				  (value_exp (cadr lst)))
++				(string-append
++					(code_gen value_exp env) ;get value
++					"\tmov rbx, rax\n";save the value from rax to rbx
++					(code_gen var_exp env) ;get the box
++					"\tmov [rax], rbx\n"; do the set
++					"\tmov rax, SOB_VOID\n";update rax to void
++				)
++			)
++	)
++)
++
++(define code_gen_box_get
++	(lambda (lst env)
++		(string-append 
++			(code_gen (car lst) env)
++			"\tmov rax, [rax]\n"
++		)
++	)
++)
++
++(define code_gen_lambda_simple 
++	(lambda (lst counter env)
++		(let ((paramLst (car lst))
++			  (body (cadr lst)))
++			 (string-append
++			""
++			"\tMY_MALLOC(8*" (number->string  env )") \n" ;extened env , in rbx
++	      	;"T_"counter":\n"
++	      	"\tmov rbx, rax \n" 
++	      	"\tpush rbx\n"
++	      	"\tmov rbx, arg_count\n"
++	      	
++	      	"\tshl rbx, 3\n"   ;;like multiply 8
++      		"\tMY_MALLOC(rbx) \n" ; env[0] = rcx
++	      	;"T2_"counter":\n"
++	      	"\tpop rbx\n"
++	      	"\tmov rcx, rax \n"
++	
++			"\tMY_MALLOC(16) \n" ;new closure rax
++			;"T3_"counter":\n"
++			"\tmov rdi, 0\n" ; params
++			"\tmov r13,"(number->string env) "\n "
++			"\tcmp r13, 0\n"
++			"\tje ENV_LOOP_END_"counter "\n\n"
++
++			"PARAM_LOOP_"counter":\n"
++			"\tcmp rdi, arg_count\n" 
++			"\tje PARAM_LOOP_END_"counter "\n"
++			"\tmov r15, rcx\n"
++			"\tpush rdi \n"
++			"\tshl rdi, 3 \n"
++			"\tadd r15, rdi\n"
++			"\tpop rdi \n"
++			"\tpush rbx\n"
++			"\tmov r9, An(rdi)\n"
++			"P1_"counter":\n"
++			"\tmov [r15], r9\n"
++			"\tpop rbx\n"
++			"\tinc rdi\n"
++			"\tjmp PARAM_LOOP_"counter"\n"
++			"PARAM_LOOP_END_"counter ":\n\n"
++
++			"\tmov [rbx], rcx \n" ; env[0] = rcx
++			"\tmov rdi,0 \n"   ;this is i 
++			"\tmov rsi, 1 \n"  ; this is j
++			"\tENV_LOOP_"counter":\n"
++			"\tinc rdi \n"
++			"\tcmp rdi," (number->string env) "\n"
++			"\tje ENV_LOOP_END_"counter"\n"
++			"\tdec rdi \n"
++			"\tmov rdx, env \n"
++			"\tmov r8, [rdx + 8 *rdi]\n"
++			"\tmov [rbx + 8 *rsi], r8\n"
++			"\tinc rdi \n"
++			"\tinc rsi \n"
++			"\tjmp ENV_LOOP_"counter"\n"
++
++			"ENV_LOOP_END_"counter":\n\n"
++
++			"\tMAKE_LITERAL_CLOSURE rax, rbx, CLOSURE_CODE_"counter "\n"
++
++			"\tjmp EXIT_"counter "\n"
++
++			;create code closure
++      		"CLOSURE_CODE_"counter":\n"
++      		"\tpush rbp \n"
++      		"\tmov rbp,rsp \n"
++      		(code_gen body env)
++      		"\tleave \n"
++      		"\tret \n"
++      		"\tEXIT_"counter": \n\n"
++      		"\tmov rax,[rax]\n" ; insert line because in rax need to be value not address 14/2 
++      		
++			 	)
++			 )
++		)
++)
++
++ (define code_gen_applic
++   (lambda (lst counter env)
++ 			   (let ((num_operand (number->string (length (cadr lst))))
++ 			   		(body_gen (reverse (map (lambda (exp) (code_gen exp env)) (cadr lst))))
++ 			   		(operator (code_gen (car lst) env)))
++ 			      (string-append
++ 			      	(fold-right
++ 			      		string-append 
++ 			      		""
++ 			      		(map (lambda (exp)
++ 			      			(string-append
++ 			      			exp "\n"
++ 			      		  "\tpush rax\n")) body_gen))
++ 			      			;"stop_applic:\n"
++						  "\tmov rbx, " num_operand "\n"
++		 			      "\tpush rbx\n"
++		 		          "\t"operator"\n"  ;code+gen to code
++		 		          "\tmov rbx, rax\n"
++		 		          "\tCLOSURE_ENV(rbx) \n"
++		 		          "\tpush rbx\n" ; push env to stack
++		 			      "\tCLOSURE_CODE(rax)\n"
++		 			      "\tcall rax\n"
++		 			      "\tmov rdi, [rsp+8]\n\t"
++		 			      "\tadd rdi, 2\n\t"
++		 			      "\tshl rdi, 3\n\t"
++		 			      "\tadd rsp,rdi\n\t"
++
++ 			       )
++ 			  )
++ 	)
++) 
++
++(define code_gen_lambda_opt
++	(lambda (lst counter env)
++        (let* ((num_elements (length (car lst))))
++		
++        (string-append  
++        "\tmov rsi , arg_count \n"
++        "\tmov rax , 8\n"
++        "\tmul rsi\n"
++        "\tmov rsi , rax\n"
++        "\tMY_MALLOC (rsi) \n" 
++        "\tmov rcx , rax \n"
++        "\tmov rsi , arg_count \n"
++        "\tmov rdx , 0 \n"
++       
++        "List_arg_" counter ":\n"       
++        "\tcmp rdx , rsi\n"
++        "\tje List_arg_END_" counter "\n"
++        
++        "\tmov rax , An(rdx)\n"
++        "\tmov qword[rcx + 8*rdx], rax\n"
++        "\tadd rdx , 1\n"
++        "\tjmp List_arg_" counter  "\n"
++        
++        "List_arg_END_" counter ":\n"
++ 
++        "\tmov r10 , " (number->string  env ) " \n"
++        "\tadd r10 , 1\n"
++        "\tmov rax , 8\n"
++        
++        "\tmul r10\n"
++        "\tmov rsi , rax \n"
++        "\tMY_MALLOC(rsi) \n"  ;malloc -> env 
++        "\tmov rbx , rax \n"
++                          
++        "\tmov qword[rbx] , rcx\n" ;env(0) = args      
++      
++        "\tmov rsi , env\n"
++        "\tmov rdx , 1\n"     ;rdi = counter new env
++        "\tmov r8 , 0\n"      ; r8 = counter for old env
++        "\tmov rax , " (number->string  env ) " \n"   
++       
++        "Env_loop_build_" counter":\n"
++        "\tcmp rdx , rax "  "\n"
++        "\tjg Env_loop_build_END" counter"\n"
++        "\tmov r9 , qword[rsi + 8*r8 ] \n"  ;loop building env
++        "\tmov qword[rbx + 8*rdx] , r9\n"
++        
++        "\tadd rdx , 1\n"
++        "\tadd r8 , 1\n"
++        "\tjmp Env_loop_build_"counter "\n"
++        
++        
++        "Env_loop_build_END" counter  ":\n"
++       
++        "\tMY_MALLOC(16) \n"  
++        "\tMAKE_LITERAL_CLOSURE rax , rbx , Lambda_body_loop" counter"\n"
++        "\tjmp Lambda_body_loop_END"counter"\n" 
++        
++        "\tLambda_body_loop"counter ":\n"
++        "\tpush rbp\n"
++        "\tmov rbp , rsp\n"
++        
++        "\tmov rsi , " (number->string num_elements) "\n"
++        "\tmov rbx , arg_count \n"
++        "\tcmp rsi , rbx \n"
++        "\tjne List_Params_" counter "\n" 
++        "\tadd rbx , 4\n"  ;rbx= loop cond
++        "\tmov rcx , 0\n"  ;rcx = counter
++        "\tmov rdx , rbp\n" 
++        "\tsub rdx , 8\n"  ;rdx= pointer to start
++         
++         "Shifting_params" counter ":\n"
++         "\tcmp rcx , rbx \n"
++         "\tje Shifting_params_END" counter "\n"
++         "\tmov rsi ,qword [rbp+8*rcx] \n"
++         "\tmov [rdx] ,rsi \n"
++         "\tadd rdx , 8 \n"
++         "\tadd rcx, 1 \n"
++         "\tjmp Shifting_params"counter "\n"
++         
++        
++         "Shifting_params_END"counter":\n"
++         "\tmov rsi , SOB_NIL \n"
++         "\tmov [rdx] , rsi \n"
++         
++         "\tsub rbp , 8 \n"
++         "\tsub rsp , 8 \n"
++         "\tmov rbx , arg_count \n"
++         "\tadd rbx , 1 \n"
++         "\tmov [rbp+3*8] ,rbx \n" 
++         "\tjmp Body_Code_gen" counter "\n"
++         
++         "List_Params_" counter ":" "\n"
++         "\tmov rdx ,rbp \n" 
++         "\tmov rsi ," (number->string num_elements) "\n" 
++         "\tmov r12 , arg_count \n"
++         "\tsub r12 , rsi \n"   
++         "\tmov rsi , arg_count \n"
++         "\tadd rsi , 4 \n"
++         "\tshl rsi , 3 \n"
++         "\tadd rdx , rsi \n"  
++         "\tmov r11 , 0 \n"     
++         
++         "\tMY_MALLOC(8)  \n"
++         "\tmov rbx , rax \n"
++         "\tmov rcx , SOB_NIL \n"
++         "\tmov [rbx] , rcx \n"
++         
++         "\tMY_MALLOC(8) \n"
++         "\tmov r10 , rax \n"
++         "\tsub rdx , 8 \n"
++         "\tmov rsi , qword[rdx] \n"
++         "\tmov [r10] , rsi \n"
++         "\tMY_MALLOC(16) \n"
++         "\tMAKE_MALLOC_LITERAL_PAIR rax ,r10 ,rbx \n"
++         "\tadd r11 , 1 \n"
++         
++         
++         "Building_arg_list" counter ": \n"
++         "\tcmp r11 , r12  \n"
++         "\tje Building_arg_list_END"counter" \n"
++         "\tmov r10 , rax \n"
++         "\tMY_MALLOC(8) \n"
++         "\tmov rbx , rax \n"
++         "\tsub rdx , 8 \n"
++         "\tmov rsi , qword[rdx] \n"
++         "\tmov [rbx] , rsi \n"
++         "\tMY_MALLOC(16) \n"
++         "\tMAKE_MALLOC_LITERAL_PAIR rax ,rbx ,r10 \n"
++         "\tadd r11 , 1 \n"
++         "\tjmp Building_arg_list" counter "\n"
++         
++         "Building_arg_list_END" counter": \n"
++
++         "\tmov rax , qword[rax] \n"
++         "\tmov qword[rdx], rax \n"
++
++         "mov r9, arg_count\n\t" 
++         "add r9, 3 \n\t" 
++         "shl r9, 3\n\t"
++         "mov rcx , rbp \n\t"
++         "add rcx, r9\n\t"
++
++         "Remove_loop" counter ": \n" 
++         "\tcmp rdx , rbp \n"
++         "\tje Remove_loop_END" counter "\n"
++         "\tmov rsi , qword[rdx] \n"
++         "\tmov qword[rcx] ,rsi \n"
++         "\tsub rcx , 8 \n"
++         "\tsub rdx , 8 \n"
++         "\tjmp Remove_loop" counter "\n"
++        
++         "Remove_loop_END" counter": \n" 
++         "\tmov rsi , qword[rdx] \n"
++         "\tmov qword[rcx] ,rsi \n"
++         "\tmov rsp , rcx \n"
++         "\tmov rbp , rcx \n"
++         "\tmov rbx ," (number->string num_elements) "\n"
++         "\tadd rbx , 1 \n"
++         "\tmov qword[rbp + 3*8] , rbx \n" 
++         
++         "Body_Code_gen" counter ":\n"
++          (code_gen  (caddr lst) env) 
++          "\tleave\n"
++          "\tret\n"   
++            
++        "Lambda_body_loop_END" counter ":\n"
++        "\tmov rax , qword [rax]\n"   
++        	)
++		)
++	)
++)
++(define code_gen_tc_applic 
++  (lambda (lst counter env)
++        (let*((num_args (number->string (length (cadr lst))))
++              (param_reverse (reverse (map (lambda (exp) (code_gen exp env)) (cadr lst)))))
++   			(string-append
++ 				(fold-right
++ 			    	string-append 
++ 			      		""
++ 			      		(map (lambda (exp) (string-append exp "\n" "push rax\n")) param_reverse))
++				   "\tmov rbx, "num_args "\n"
++ 			       "\tpush rbx\n"
++				
++ 		           (code_gen (car lst) env)"\n"  ;activate the code
++ 		          "\tmov rbx, rax\n"
++
++ 		          "\tCLOSURE_ENV(rbx) \n"
++ 		          "\tpush rbx \n" ; push the env in stack
++ 		          "\tmov r12, ret_addr \n"
++ 				  "\tpush r12 \n"
++ 			
++ 				  "\tmov r8, rbp \n"
++ 				  "\tmov rbp, old_rbp \n"
++ 				  "\tmov rdi,"num_args "+ 3\n"
++ 				  "\tmov r14, [r8 + 3 *8]\n"
++ 				  "\tadd r14, 4\n"
++ 				  
++ 				  "\tdec r14\n"
++ 				  "\tdec rdi\n"
++ 				  "\tmov r9, [rsp +rdi*8]\n"
++ 				  "\tmov [r8 + r14*8], r9\n"
++
++ 				  "Loop_Tc_applic_"counter ":\n"
++ 				  "\tcmp rdi , 0 \n"
++ 				  "\tje Loop_Tc_applic_END_"counter "\n"
++ 				  "\tdec r14\n"
++ 				  "\tdec rdi\n"
++ 				  "\tmov r9, [rsp +rdi*8]\n"
++ 				  "\tmov [r8 + r14*8], r9\n"
++ 				  "\tjmp Loop_Tc_applic_"counter"\n"
++
++ 				  "Loop_Tc_applic_END_"counter":\n"
++ 				  "\tlea rsp, [r8 + r14 *8]\n"
++ 				  "\tCLOSURE_CODE(rax)\n"
++ 				  "\tjmp rax\n"
++             )
++   		)
++    )
++)
++;set disassembly-flavor intel
++;layout reg
+\ No newline at end of file
+diff --git a/pattern-matcher.scm b/pattern-matcher.scm
+new file mode 100644
+index 0000000..10ed0a0
+--- /dev/null
++++ b/pattern-matcher.scm
+@@ -0,0 +1,79 @@
++;;; pattern-matcher.scm
++;;; The pattern-matching package
++;;;
++;;; Programmer: Mayer Goldberg, 2016
++
++(define match
++  (letrec ((match
++	    (lambda (pat e ret-dict ret-no-match)
++	      (cond ((and (pair? pat) (pair? e))
++		     (match (car pat) (car e)
++			    (lambda (car-dict)
++			      (match (cdr pat) (cdr e)
++				     (lambda (cdr-dict)
++				       (ret-dict
++					(append car-dict cdr-dict)))
++				     ret-no-match))
++			    ret-no-match))
++		    ((and (vector? pat) (vector? e)
++			  (= (vector-length pat)
++			     (vector-length e)))
++		     (match
++		      (vector->list pat)
++		      (vector->list e)
++		      ret-dict
++		      ret-no-match))
++		    ;; match with unification
++		    ((procedure? pat)
++		     (if (pat e)
++			 (ret-dict `(,e))
++			 (ret-no-match)))
++		    ((or (and (char? pat) (char? e) (char=? pat e))
++			 (and (string? pat)
++			      (string? e)
++			      (string=? pat e))
++			 (and (symbol? pat) (symbol? e) (eq? pat e))
++			 (and (number? pat) (number? e) (= pat e))
++			 (eq? pat e))
++		     (ret-dict '()))
++		    (else (ret-no-match))))))
++    (lambda (pat e ret-match ret-no-match)
++      (match pat e
++	     (lambda (dict) (apply ret-match dict))
++	     ret-no-match))))
++
++(define ?
++  (lambda (name . guards)
++    (lambda (e)
++      (andmap
++       (lambda (pred?)
++	 (pred? e))
++       guards))))
++
++;;; composing patterns
++
++(define pattern-rule
++  (lambda (pat handler)
++    (lambda (e failure)
++      (match pat e handler failure))))
++
++(define compose-patterns
++  (letrec ((match-nothing
++	    (lambda (e failure)
++	      (failure)))
++	   (loop
++	    (lambda (s)
++	      (if (null? s)
++		  match-nothing
++		  (let ((match-rest
++			 (loop (cdr s)))
++			(match-first (car s)))
++		    (lambda (e failure)
++		      (match-first e
++		       (lambda ()
++			 (match-rest e failure)))))))))
++    (lambda patterns
++      (loop patterns))))
++
++;;; end of input
++
+diff --git a/pc.scm b/pc.scm
+new file mode 100644
+index 0000000..0320d15
+--- /dev/null
++++ b/pc.scm
+@@ -0,0 +1,440 @@
++;;; pc.scm
++;;; A simple implementation of parsing combinators
++;;;
++;;; Programmer: Mayer Goldberg, 2017
++
++(define with (lambda (s f) (apply f s)))
++
++(define *marker-length* 8)
++
++(define <end-of-input>
++  (lambda (s ret-match ret-none)
++    (if (null? s)
++	(ret-match '() '())
++	(ret-none '()))))
++
++(define const
++  (lambda (pred?)
++    (lambda (s ret-match ret-none)
++      (cond ((null? s) (ret-none '()))
++	    ((pred? (car s)) (ret-match (car s) (cdr s)))
++	    (else (ret-none '()))))))
++
++(define <epsilon>
++  (lambda (s ret-match ret-none)
++    (ret-match '() s)))
++
++(define <fail>
++  (lambda (s ret-match ret-none)
++    (ret-none '())))
++
++(define caten
++  (let ((binary-caten
++	 (lambda (<p1> <p2>)
++	   (lambda (s ret-match ret-none)
++	     (<p1> s
++		 (lambda (e1 s)
++		   (<p2> s
++		       (lambda (e2 s)
++			 (ret-match (cons e1 e2) s))
++		       ret-none))
++		 ret-none)))))
++    (lambda ps
++      (fold-right binary-caten <epsilon> ps))))
++
++(define disj
++  (let ((binary-disj
++	 (lambda (<p1> <p2>)
++	   (lambda (s ret-match ret-none)
++	     (<p1> s
++		 ret-match
++		 (lambda (w)
++		   (<p2> s
++		       ret-match
++		       ret-none)))))))
++    (lambda ps
++      (fold-right binary-disj <fail> ps))))
++
++(define delayed
++  (lambda (thunk)
++    (lambda (s ret-match ret-none)
++      ((thunk) s ret-match ret-none))))
++
++(define star
++  (lambda (p)
++    (disj (pack-with (caten p (delayed (lambda () (star p))))
++		     cons)
++	  <epsilon>)))
++
++(define plus
++  (lambda (p)
++    (pack-with (caten p (star p))
++	       cons)))
++
++(define times
++  (lambda (<p> n)
++    (if (zero? n)
++	<epsilon>
++	(pack-with
++	 (caten <p> (times <p> (- n 1)))
++	 cons))))
++
++(define at-least
++  (lambda (<p> n)
++    (new (*parser <p>)
++	 (*times n)
++	 (*parser <p>)
++	 *star
++	 (*caten 2)
++	 (*pack-with
++	  (lambda (e^4 e^*)
++	    `(,@e^4 ,@e^*)))
++	 done)))
++
++(define pack
++  (lambda (p f)
++    (lambda (s ret-match ret-none)
++      (p s (lambda (e s) (ret-match (f e) s)) ret-none))))
++
++(define pack-with
++  (lambda (p f)
++    (lambda (s ret-match ret-none)
++      (p s (lambda (e s) (ret-match (apply f e) s)) ret-none))))
++
++(define diff
++  (lambda (<p1> <p2>)
++    (lambda (s ret-match ret-none)
++      (<p1> s
++	  (lambda (e w)
++	    (<p2> s (lambda _ (ret-none '()))
++		(lambda (w1) (ret-match e w))))
++	  ret-none))))
++
++(define maybe
++  (lambda (p)
++    (lambda (s ret-match ret-none)
++      (p s
++	 (lambda (e s) (ret-match `(#t ,e) s))
++	 (lambda (w) (ret-match `(#f #f) s))))))
++
++(define only-if
++  (lambda (p pred?)
++    (lambda (s ret-match ret-none)
++      (p s
++	 (lambda (e s)
++	   (if (pred? e)
++	       (ret-match e s)
++	       (ret-none '())))
++	 ret-none))))
++
++(define otherwise
++  (lambda (p message)
++    (lambda (s ret-match ret-none)
++      (p s
++	 ret-match
++	 (let ((marker
++		(format "-->[~a]"
++		  (list->string
++		   (list-head s *marker-length*)))))
++	   (lambda (w) (ret-none `(,@w ,message ,marker))))))))
++
++;;;
++
++(define ^char
++  (lambda (char=?)
++    (lambda (character)
++      (const
++       (lambda (ch)
++	 (char=? ch character))))))
++
++(define char (^char char=?))
++
++(define char-ci (^char char-ci=?))
++
++(define ^word
++  (lambda (char)
++    (lambda (word)
++      (apply caten (map char (string->list word))))))
++
++(define word (^word char))
++
++(define word-ci (^word char-ci))
++
++(define ^word-suffixes
++  (lambda (char)
++    (letrec ((loop
++	      (lambda (s)
++		(if (null? s)
++		    <epsilon>
++		    (maybe
++		     (caten (char (car s))
++			    (loop (cdr s))))))))
++      (lambda (suffix)
++	(loop (string->list suffix))))))
++
++(define word-suffixes (^word-suffixes char))
++
++(define word-suffixes-ci (^word-suffixes char-ci))
++
++(define ^word+suffixes
++  (lambda (word-suffixes)
++    (lambda (prefix suffix)
++      (caten (word prefix)
++	     (word-suffixes suffix)))))
++
++(define word+suffixes (^word+suffixes word-suffixes))
++
++(define word+suffixes-ci (^word+suffixes word-suffixes-ci))
++
++(define ^one-of
++  (lambda (char)
++    (lambda (word)
++      (apply disj (map char (string->list word))))))
++
++(define one-of (^one-of char))
++
++(define one-of-ci (^one-of char-ci))
++
++(define ^range
++  (lambda (char<=?)
++    (lambda (char-from char-to)
++      (const
++       (lambda (ch)
++	 (and (char<=? char-from ch)
++	      (char<=? ch char-to)))))))
++
++(define range (^range char<=?))
++
++(define range-ci (^range char-ci<=?))
++
++(define <any-char> (const (lambda (ch) #t)))
++
++(define <any> <any-char>)
++
++;;; <expr> {<sep> <expr>}*
++(define ^<separated-exprs>
++  (lambda (<expr> <sep>)
++    (new (*parser <expr>)
++	 
++	 (*parser <sep>)
++	 (*parser <expr>)
++	 (*caten 2)
++	 (*pack-with (lambda (_sep expr) expr))
++	 *star
++	 
++	 (*caten 2)
++	 (*pack-with cons)
++	 done)))
++
++;;;
++
++(define continue
++  (lambda (ds cs)
++    (with cs
++      (lambda (c . cs)
++	(c ds cs)))))
++
++(define new
++  (lambda cs
++    (continue '() cs)))
++
++(define done
++  (lambda (ds cs)
++    (with ds
++      (lambda (parser . ds)
++	(if (null? ds)
++	    parser
++	    (error 'done
++		   (format "The parser stack still contains ~a parsers!"
++		     (length ds))))))))
++
++(define *parser
++  (lambda (p)
++    (lambda (ds cs)
++      (continue `(,p . ,ds) cs))))
++
++(define unary
++  (lambda (f-unary)
++    (lambda (ds cs)
++      (with ds
++	(lambda (d . ds)
++	  (continue `(,(f-unary d) . ,ds) cs))))))
++
++(define *delayed
++  (lambda (thunk)
++    (lambda (ds cs)
++      (continue `(,(delayed thunk) . ,ds) cs))))
++
++(define binary
++  (lambda (f-binary)
++    (lambda (ds cs)
++      (with ds
++	(lambda (d2 d1 . ds)
++	  (continue `(,(f-binary d1 d2) . ,ds) cs))))))
++
++(define *dup
++  (lambda (ds cs)
++    (with ds
++      (lambda (d1 . ds)
++	(continue `(,d1 ,d1 . ,ds) cs)))))
++
++(define *swap
++  (lambda (ds cs)
++    (with ds
++      (lambda (d1 d2 . ds)
++	(continue `(,d2 ,d1 . ,ds) cs)))))
++
++(define *star (unary star))
++
++(define *plus (unary plus))
++
++(define *diff (binary diff))
++
++(define *pack (lambda (f) (unary (lambda (p) (pack p f)))))
++
++(define *pack-with (lambda (f) (unary (lambda (p) (pack-with p f)))))
++
++(define *only-if (lambda (pred?) (unary (lambda (p) (only-if p pred?)))))
++
++(define split-list
++  (lambda (s n ret-s1+s2)
++    (if (zero? n)
++	(ret-s1+s2 '() s)
++	(split-list (cdr s) (- n 1)
++		    (lambda (s1 s2)
++		      (ret-s1+s2 (cons (car s) s1) s2))))))
++
++(define nary
++  (lambda (f-n-ary n)
++    (lambda (ds cs)
++      (split-list ds n
++       (lambda (sgra ds)
++	 (continue
++	  `(,(apply f-n-ary (reverse sgra)) . ,ds) cs))))))
++
++(define *caten (lambda (n) (nary caten n)))
++
++(define *disj (lambda (n) (nary disj n)))
++
++(define *maybe (unary maybe))
++
++(define *otherwise
++  (lambda (string)
++    (unary
++     (lambda (p)
++       (otherwise p string)))))
++
++(define *times
++  (lambda (n)
++    (unary
++     (lambda (<p>)
++       (times <p> n)))))
++
++(define *at-least
++  (lambda (n)
++    (unary
++     (lambda (<p>)
++       (at-least <p> n)))))
++
++(define followed-by
++  (lambda (<p1> <p2>)
++    (lambda (s ret-match+rest ret-none)
++      (<p1> s
++	    (lambda (e s)
++	      (<p2> s
++		    (lambda (_e _s)
++		      (ret-match+rest e s))
++		    ret-none))
++	    ret-none))))
++
++(define not-followed-by
++  (lambda (<p1> <p2>)
++    (new (*parser <p1>)
++	 (*parser <p2>) *maybe
++	 (*caten 2)
++	 (*pack-with
++	  (lambda (e1 ?e2)
++	    (with ?e2
++	      (lambda (found-e2? _)
++		`(,e1 ,found-e2?)))))
++	 (*only-if
++	  (lambda (e1+found-e2?)
++	    (with e1+found-e2?
++	      (lambda (_ found-e2?)
++		(not found-e2?)))))
++	 (*pack-with
++	  (lambda (e1 _) e1))
++	 done)))
++
++(define *followed-by (binary followed-by))
++
++(define *not-followed-by (binary not-followed-by))
++
++(define *transformer
++  (lambda (^<p>)
++    (unary (lambda (<p>) (^<p> <p>)))))
++
++;;; 
++
++(define test-string
++  (lambda (parser string)
++    (parser (string->list string)
++	    (lambda (e s)
++	      `((match ,e)
++		(remaining ,(list->string s))))
++	    (lambda (w) `(failed with report: ,@w)))))
++
++(define test
++  (lambda (parser s)
++    (parser s
++	    (lambda (e s)
++	      `((match ,e)
++		(remaining ,s)))
++	    (lambda (w) `(failed with report: ,@w)))))
++
++;;;
++
++(define file->string
++  (lambda (filename)
++    (let ((input (open-input-file filename)))
++      (letrec ((run
++		(lambda ()
++		  (let ((e (read-char input)))
++		    (if (eof-object? e)
++			(begin
++			  (close-input-port input)
++			  '())
++			(cons e (run)))))))
++	(list->string (run))))))
++
++(define read-stdin-to
++  (lambda (end-of-input)
++    (let ((end-of-input-list (string->list end-of-input)))
++      (letrec ((state-init
++		(lambda (seen)
++		  (let ((ch (read-char)))
++		    (cond ((eof-object? ch)
++			   (error 'read-stdin-to
++			     (format "Marker ~a not reached"
++			       end-of-input)))
++			  ((char=? ch (car end-of-input-list))
++			   (state-seen seen `(,ch) (cdr end-of-input-list)))
++			  (else (state-init `(,ch ,@seen)))))))
++	       (state-seen
++		(lambda (seen-before seen-now end-of-input-list-rest)
++		  (if (null? end-of-input-list-rest)
++		      (list->string
++		       (reverse seen-before))
++		      (let ((ch (read-char)))
++			(cond ((eof-object? ch)
++			       (format "Marker ~a not reached"
++				 end-of-input))
++			      ((char=? ch (car end-of-input-list-rest))
++			       (state-seen seen-before
++					   `(,ch ,@seen-now)
++					   (cdr end-of-input-list-rest)))
++			      (else (state-init
++				     `(,ch ,@seen-now ,@seen-before)))))))))
++	(state-init '())))))
++
++;;; end-of-input
+diff --git a/primitive.scm b/primitive.scm
+new file mode 100644
+index 0000000..1036f36
+--- /dev/null
++++ b/primitive.scm
+@@ -0,0 +1,44 @@
++(define not
++	(lambda (exp)
++		(if exp #f #t)))
++
++(define list (lambda x x))
++
++
++(define map
++	(lambda (proc items)
++		(if (null? items)(list)(cons (proc (car items))
++			(map proc (cdr items))))))
++
++
++
++
++(define fold-right 
++ 	(lambda (f init seq) 
++   (if (null? seq) 
++       init 
++       (f (car seq) 
++           (fold-right f init (cdr seq)))))) 
++
++(define append
++	(lambda s
++	 (fold-left binary-append '() s)))
++
++ (define binary-append 
++		(lambda (list1 list2)
++	(cond ((null? list1) list2)
++		  ((and (null? (cdr list1)) (symbol? list2)) (cons (car list1) list2))
++          (else (cons (car list1) (binary-append (cdr list1) list2))) )))
++
++
++(define fold-left 
++(lambda (f init seq) 
++   (if (null? seq) 
++       init 
++       (fold-left f 
++                  (f init (car seq) ) 
++                  (cdr seq))))) 
++
++
++
++
+diff --git a/qq.scm b/qq.scm
+new file mode 100644
+index 0000000..b635415
+--- /dev/null
++++ b/qq.scm
+@@ -0,0 +1,107 @@
++;;; qq.scm
++;;; A naive, one-level quasiquote implementation + optimizations
++;;;
++;;; Programmer: Mayer Goldberg, 2016
++
++(load "project/pattern-matcher.scm")
++
++;;;
++
++(define ^quote?
++  (lambda (tag)
++    (lambda (e)
++      (and (pair? e)
++	   (eq? (car e) tag)
++	   (pair? (cdr e))
++	   (null? (cddr e))))))
++
++(define quote? (^quote? 'quote))
++(define unquote? (^quote? 'unquote))
++(define unquote-splicing? (^quote? 'unquote-splicing))
++
++(define const?
++  (let ((simple-sexprs-predicates
++	 (list boolean? char? number? string?)))
++    (lambda (e)
++      (or (ormap (lambda (p?) (p? e))
++		 simple-sexprs-predicates)
++	  (quote? e)))))
++
++(define quotify
++  (lambda (e)
++    (if (or (null? e)
++	    (pair? e)
++	    (symbol? e)
++	    (vector? e))
++	`',e
++	e)))
++
++(define unquotify
++  (lambda (e)
++    (if (quote? e)
++	(cadr e)
++	e)))
++
++(define const-pair?
++  (lambda (e)
++    (and (quote? e)
++	 (pair? (cadr e)))))
++
++(define expand-qq
++  (letrec ((expand-qq
++	    (lambda (e)
++	      (cond ((unquote? e) (cadr e))
++		    ((unquote-splicing? e)
++		     (error 'expand-qq
++		       "unquote-splicing here makes no sense!"))
++		    ((pair? e)
++		     (let ((a (car e))
++			   (b (cdr e)))
++		       (cond ((unquote-splicing? a)
++			      `(append ,(cadr a) ,(expand-qq b)))
++			     ((unquote-splicing? b)
++			      `(cons ,(expand-qq a) ,(cadr b)))
++			     (else `(cons ,(expand-qq a) ,(expand-qq b))))))
++		    ((vector? e) `(list->vector ,(expand-qq (vector->list e))))
++		    ((or (null? e) (symbol? e)) `',e)
++		    (else e))))
++	   (optimize-qq-expansion (lambda (e) (optimizer e (lambda () e))))
++	   (optimizer
++	    (compose-patterns
++	     (pattern-rule
++	      `(append ,(? 'e) '())
++	      (lambda (e) (optimize-qq-expansion e)))
++	     (pattern-rule
++	      `(append ,(? 'c1 const-pair?) (cons ,(? 'c2 const?) ,(? 'e)))
++	      (lambda (c1 c2 e)
++		(let ((c (quotify `(,@(unquotify c1) ,(unquotify c2))))
++		      (e (optimize-qq-expansion e)))
++		  (optimize-qq-expansion `(append ,c ,e)))))
++	     (pattern-rule
++	      `(append ,(? 'c1 const-pair?) ,(? 'c2 const-pair?))
++	      (lambda (c1 c2)
++		(let ((c (quotify (append (unquotify c1) (unquotify c2)))))
++		  c)))
++	     (pattern-rule
++	      `(append ,(? 'e1) ,(? 'e2))
++	      (lambda (e1 e2)
++		(let ((e1 (optimize-qq-expansion e1))
++		      (e2 (optimize-qq-expansion e2)))
++		  `(append ,e1 ,e2))))
++	     (pattern-rule
++	      `(cons ,(? 'c1 const?) (cons ,(? 'c2 const?) ,(? 'e)))
++	      (lambda (c1 c2 e)
++		(let ((c (quotify (list (unquotify c1) (unquotify c2))))
++		      (e (optimize-qq-expansion e)))
++		  (optimize-qq-expansion `(append ,c ,e)))))
++	     (pattern-rule
++	      `(cons ,(? 'e1) ,(? 'e2))
++	      (lambda (e1 e2)
++		(let ((e1 (optimize-qq-expansion e1))
++		      (e2 (optimize-qq-expansion e2)))
++		  (if (and (const? e1) (const? e2))
++		      (quotify (cons (unquotify e1) (unquotify e2)))
++		      `(cons ,e1 ,e2))))))))
++    (lambda (e)
++      (optimize-qq-expansion
++       (expand-qq e)))))
+diff --git a/readme.txt b/readme.txt
+index e69de29..024d39f 100644
+--- a/readme.txt
++++ b/readme.txt
+@@ -0,0 +1,8 @@
++Hadas Shidlovski: 200423770
++Michal Lorberbom: 311120133
++I (We) assert that the work we submitted is 100% our own. We have not received any
++part from any other student in the class, nor have we give parts of it for use to others.
++Nor have we used code from other sources: Courses taught previously at this university,
++courses taught at other universities, various bits of code found on the internet, etc. We
++realize that should our code be found to contain code from other sources, that a formal
++case shall be opened against us with ffffffffff ffffffff ,in pursuit of disciplinary action.
+\ No newline at end of file
+diff --git a/scheme.s b/scheme.s
+new file mode 100644
+index 0000000..cef843b
+--- /dev/null
++++ b/scheme.s
+@@ -0,0 +1,952 @@
++;;; scheme.s
++;;; Support for the Scheme compiler
++;;; 
++;;; Programmer: Mayer Goldberg, 2018
++
++%define T_UNDEFINED 0
++%define T_VOID 1
++%define T_NIL 2
++%define T_INTEGER 3
++%define T_FRACTION 4
++%define T_BOOL 5
++%define T_CHAR 6
++%define T_STRING 7
++%define T_SYMBOL 8
++%define T_CLOSURE 9
++%define T_PAIR 10
++%define T_VECTOR 11
++
++%define CHAR_NUL 0
++%define CHAR_TAB 9
++%define CHAR_NEWLINE 10
++%define CHAR_PAGE 12
++%define CHAR_RETURN 13
++%define CHAR_SPACE 32
++%define CHAR_QUOTATION 34
++
++%define TYPE_BITS 4
++%define WORD_SIZE 64
++
++%define MAKE_LITERAL(type, lit) ((lit << TYPE_BITS) | type)
++
++%macro TYPE 1
++	and %1, ((1 << TYPE_BITS) - 1) 
++%endmacro
++
++%macro DATA 1
++	sar %1, TYPE_BITS
++%endmacro
++
++%macro DATA_UPPER 1
++	shr %1, (((WORD_SIZE - TYPE_BITS) >> 1) + TYPE_BITS)
++%endmacro
++
++%macro DATA_LOWER 1
++	shl %1, ((WORD_SIZE - TYPE_BITS) >> 1)
++	DATA_UPPER %1
++%endmacro
++
++%macro DATA_UPPER_MEIR 1
++	sar %1, (((WORD_SIZE - TYPE_BITS) >> 1) + TYPE_BITS)
++%endmacro
++
++%macro DATA_LOWER_MEIR 1
++	sal %1, ((WORD_SIZE - TYPE_BITS) >> 1)
++	DATA_UPPER %1
++%endmacro
++
++%define MAKE_LITERAL_PAIR(car, cdr) (((((car - start_of_data) << ((WORD_SIZE - TYPE_BITS) >> 1)) | (cdr - start_of_data)) << TYPE_BITS) | T_PAIR)
++%define MAKE_LITERAL_SYMBOL(address) (( address - start_of_data)  <<  TYPE_BITS | T_SYMBOL)
++%define MAKE_LITERAL_FRACTION(mone, mehane) ((mone << 34) | (mehane << TYPE_BITS) | T_FRACTION)
++
++;MAKE_MALLOC_LITERAL_PAIR target-address, car-address, cdr-address
++%macro MAKE_MALLOC_LITERAL_PAIR 3
++push rax 
++push rbx 
++mov rax, %1 
++mov qword [rax], %2
++sub qword [rax], start_of_data
++shl qword [rax], ((WORD_SIZE - TYPE_BITS) >> 1) 
++mov rbx, %3 
++sub rbx, start_of_data
++or qword [rax], rbx 
++shl qword [rax], TYPE_BITS 
++or qword [rax], T_PAIR 
++pop rbx 
++pop rax 
++%endmacro
++
++%macro CAR 1
++	DATA_UPPER %1
++	add %1, start_of_data
++	mov %1, qword [%1]
++%endmacro
++
++%macro CDR 1
++	DATA_LOWER %1
++	add %1, start_of_data
++	mov %1, qword [%1]
++%endmacro
++
++;;; MAKE_LITERAL_CLOSURE target, env, code
++%macro MAKE_LITERAL_CLOSURE 3
++	push rax
++	push rbx
++	mov rax, %1
++	mov qword [rax], %2
++	sub qword [rax], start_of_data	
++	shl qword [rax], ((WORD_SIZE - TYPE_BITS) >> 1)
++	lea rbx, [rax + 8]
++	sub rbx, start_of_data
++	or qword [rax], rbx
++	shl qword [rax], TYPE_BITS
++	or qword [rax], T_CLOSURE
++	mov qword [rax + 8], %3
++	pop rbx
++	pop rax
++%endmacro
++
++%macro CLOSURE_ENV 1
++	DATA_UPPER %1
++	add %1, start_of_data
++%endmacro
++
++%macro CLOSURE_CODE 1
++	DATA_LOWER %1
++	add %1, start_of_data
++	mov %1, qword [%1]
++%endmacro
++
++%macro MAKE_LITERAL_STRING 1+
++	dq (((((%%LstrEnd - %%Lstr) << ((WORD_SIZE - TYPE_BITS) >> 1)) | (%%Lstr - start_of_data)) << TYPE_BITS) | T_STRING)
++	%%Lstr:
++	db %1
++	%%LstrEnd:
++%endmacro
++
++%macro STRING_LENGTH 1
++	DATA_UPPER %1
++%endmacro
++
++%macro STRING_ELEMENTS 1
++	DATA_LOWER %1
++	add %1, start_of_data
++%endmacro
++
++
++%macro GET_NUMERATOR 1    
++	DATA_UPPER %1
++%endmacro
++
++
++%macro GET_DENOMINATOR 1
++	DATA_LOWER %1
++%endmacro
++
++%macro MY_MAKE_STRING 2 ;%1 = n, %2 = pointer to string
++	shl %1, ((WORD_SIZE - TYPE_BITS) >> 1)
++	sub %2, start_of_data
++	or %1 , %2
++	shl %1, TYPE_BITS
++	or %1, T_STRING
++%endmacro
++
++%macro MY_MAKE_VECTOR 2 ;%1 = n, %2 = pointer to vector
++	sal %1, ((WORD_SIZE - TYPE_BITS) >> 1)
++	sub %2, start_of_data
++	or %1 , %2
++	sal %1, TYPE_BITS
++	or %1, T_VECTOR
++%endmacro
++
++;;; STRING_REF dest, src, index
++;;; dest cannot be RAX! (fix this!)
++%macro STRING_REF 3
++	push rax
++	mov rax, %2
++	STRING_ELEMENTS rax
++	add rax, %3
++	mov %1, byte [rax]
++	pop rax
++%endmacro
++
++%macro MAKE_LITERAL_VECTOR 1+
++	dq ((((((%%VecEnd - %%Vec) >> 3) << ((WORD_SIZE - TYPE_BITS) >> 1)) | (%%Vec - start_of_data)) << TYPE_BITS) | T_VECTOR)
++	%%Vec:
++	dq %1
++	%%VecEnd:
++%endmacro
++
++%macro VECTOR_LENGTH 1
++	DATA_UPPER %1
++%endmacro
++
++%macro VECTOR_ELEMENTS 1
++	DATA_LOWER %1
++	add %1, start_of_data
++%endmacro
++
++;;; VECTOR_REF dest, src, index
++;;; dest cannot be RAX! (fix this!)
++%macro VECTOR_REF 3
++	mov %1, %2
++	VECTOR_ELEMENTS %1
++	lea %1, [%1 + %3*8]
++	mov %1, qword [%1]
++	mov %1, qword [%1]
++%endmacro
++
++%macro VECTOR_SET 4
++	mov %1, %2
++	VECTOR_ELEMENTS %1
++	lea %1, [%1 + %3*8]
++	mov %1, qword [%1]
++	mov qword[%1], %4
++	;mov %2, %1
++%endmacro
++
++;;macro for gcdAlgorithm
++%macro iabs 1
++	cmp %1, 0
++	jge %%cont
++	neg %1
++	%%cont:
++%endmacro
++
++section .data
++gcd:
++	push rbp
++	mov rbp, rsp
++
++	mov rdx, 0
++	mov rax, [rbp + 8 + 1*8] ; first
++	mov rbx, [rbp + 8 + 2*8] ; second
++	iabs rax
++	iabs rbx
++	cmp rax, rbx
++	jge .loop
++	xchg rax, rbx
++
++.loop:
++	cmp rbx, 0
++	je .done
++	mov rdx, 0
++	cqo
++	div rbx
++	mov rax, rbx
++	mov rbx, rdx
++	jmp .loop
++
++.done:
++	pop rbp
++	ret
++
++
++%define SOB_UNDEFINED MAKE_LITERAL(T_UNDEFINED, 0)
++%define SOB_VOID MAKE_LITERAL(T_VOID, 0)
++%define SOB_FALSE MAKE_LITERAL(T_BOOL, 0)
++%define SOB_TRUE MAKE_LITERAL(T_BOOL, 1)
++%define SOB_NIL MAKE_LITERAL(T_NIL, 0)
++%define bytes(n) (n)
++%define Kilobyte(n) (bytes(n) << 10)
++%define megabyte(n) (Kilobyte(n) << 10)
++%define gigabyte(n) (megabyte(n) << 10)
++
++%macro MY_MALLOC 1
++	push rbx
++	mov rbx, malloc_pointer
++	mov rax, qword [rbx]
++	add qword [rbx], %1
++	pop rbx
++%endmacro 
++
++%define param(offset) qword [rbp + offset]
++
++struc scmframe
++.old_rbp: resq 1
++.ret_addr: resq 1
++.env: resq 1
++.arg_count: resq 1
++.A0: resq 1
++.A1: resq 1
++.A2: resq 1
++.A3: resq 1
++.A4: resq 1
++.A5: resq 1
++endstruc
++
++%define old_rbp param(scmframe.old_rbp)
++%define ret_addr param(scmframe.ret_addr)
++%define env param(scmframe.env)
++%define arg_count param(scmframe.arg_count)
++%define A0 param(scmframe.A0)
++%define A1 param(scmframe.A1)
++%define A2 param(scmframe.A2)
++%define A3 param(scmframe.A3)
++%define A4 param(scmframe.A4)
++%define A5 param(scmframe.A5)
++%define An(n) qword [rbp + 8 * (n + 4)]
++
++; start_of_data:
++; sobNil:
++; 	dq SOB_NIL
++; sobInt3:
++; 	dq MAKE_LITERAL(T_INTEGER, 3)
++; sobInt2:
++; 	dq MAKE_LITERAL(T_INTEGER, 2)
++; sobInt1:
++; 	dq MAKE_LITERAL(T_INTEGER, 1)
++; sobPair3N:
++; 	dq MAKE_LITERAL_PAIR(sobInt3, sobNil)
++; sobPair23N:
++; 	dq MAKE_LITERAL_PAIR(sobInt2, sobPair3N)
++; sobPair123N:
++; 	dq MAKE_LITERAL_PAIR(sobInt1, sobPair23N)
++; sobPair12:
++; 	dq MAKE_LITERAL_PAIR(sobInt1, sobInt2)
++; sobPairA:
++; 	dq MAKE_LITERAL_PAIR(sobPair12, sobNil)
++; sobPairB:
++; 	dq MAKE_LITERAL_PAIR(sobPair123N, sobPairA)
++; sobPairC:
++; 	dq MAKE_LITERAL_PAIR(sobInt3, sobPair12)
++; sobPairNN:
++; 	dq MAKE_LITERAL_PAIR(sobNil, sobNil)
++; sob1:
++; 	dq MAKE_LITERAL_PAIR(sobInt1, sobPairNN)
++; sob2:
++; 	dq MAKE_LITERAL_PAIR(sobInt2, sob1)
++; sob3:
++; 	dq MAKE_LITERAL_PAIR(sob2, sob2)
++; sob4:
++; 	dq MAKE_LITERAL_PAIR(sobInt1, sobNil)
++; sob5:
++; 	dq MAKE_LITERAL_PAIR(sob4, sobNil)
++; sob6:
++; 	dq 0, 0 		; closure: wait for later!
++; sob7:
++; 	MAKE_LITERAL_STRING "Mayer", CHAR_NEWLINE, "Goldberg", CHAR_TAB, "<=="
++; sob8:
++; 	dq MAKE_LITERAL_PAIR(sob7, sobPairB)
++; sobVec1:
++; 	MAKE_LITERAL_VECTOR sob8, sob7, sobInt1, sobInt2, sobInt3, sob4 
++
++section .bss
++malloc_pointer:
++resq 1
++start_of_malloc:
++resb gigabyte(1)
++extern exit, printf, scanf
++global main, write_sob, write_sob_if_not_void
++
++
++
++section .text
++; main:
++; 	nop
++; 	; setup a fake closure just to see how it prints:
++; 	mov rax, 0x1234
++; 	sal rax, 30
++; 	or rax, sob6 + 8 - start_of_data
++; 	sal rax, 4
++; 	or rax, T_CLOSURE
++; 	mov qword [sob6], rax
++; 	mov qword [sob6 + 8], main
++
++; 	; printing the fake closure:	
++; 	push qword [sob6]
++; 	call write_sob_if_not_void
++; 	add rsp, 1*8
++
++; 	; printing a vector:
++; 	push qword [sobVec1]
++; 	call write_sob_if_not_void
++; 	add rsp, 1*8
++
++; 	; will void print??
++; 	push qword SOB_VOID
++; 	call write_sob_if_not_void
++; 	add rsp, 1*8
++	
++; 	ret
++
++write_sob_undefined:
++	push rbp
++	mov rbp, rsp
++
++	mov rax, 0
++	mov rdi, .undefined
++	call printf
++
++	leave
++	ret
++
++section .data
++.undefined:
++	db "#<undefined>", 0
++
++write_sob_integer:
++	push rbp
++	mov rbp, rsp
++
++	mov rsi, qword [rbp + 8 + 1*8]
++	sar rsi, TYPE_BITS
++	mov rdi, .int_format_string
++	mov rax, 0
++	call printf
++
++	leave
++	ret
++
++section .data
++.int_format_string:
++	db "%ld", 0
++
++write_sob_char:
++	push rbp
++	mov rbp, rsp
++
++	mov rsi, qword [rbp + 8 + 1*8]
++	DATA rsi
++
++	cmp rsi, CHAR_NUL
++	je .Lnul
++
++	cmp rsi, CHAR_TAB
++	je .Ltab
++
++	cmp rsi, CHAR_NEWLINE
++	je .Lnewline
++
++	cmp rsi, CHAR_PAGE
++	je .Lpage
++
++	cmp rsi, CHAR_RETURN
++	je .Lreturn
++
++	cmp rsi, CHAR_SPACE
++	je .Lspace
++	jg .Lregular
++
++	mov rdi, .special
++	jmp .done	
++
++.Lnul:
++	mov rdi, .nul
++	jmp .done
++
++.Ltab:
++	mov rdi, .tab
++	jmp .done
++
++.Lnewline:
++	mov rdi, .newline
++	jmp .done
++
++.Lpage:
++	mov rdi, .page
++	jmp .done
++
++.Lreturn:
++	mov rdi, .return
++	jmp .done
++
++.Lspace:
++	mov rdi, .space
++	jmp .done
++
++.Lregular:
++	mov rdi, .regular
++	jmp .done
++
++.done:
++	mov rax, 0
++	call printf
++
++	leave
++	ret
++
++section .data
++.space:
++	db "#\space", 0
++.newline:
++	db "#\newline", 0
++.return:
++	db "#\return", 0
++.tab:
++	db "#\tab", 0
++.page:
++	db "#\page", 0
++.nul:
++	db "#\nul", 0
++.special:
++	db "#\x%01x", 0
++.regular:
++	db "#\%c", 0
++
++write_sob_void:
++	push rbp
++	mov rbp, rsp
++
++	mov rax, 0
++	mov rdi, .void
++	call printf
++
++	leave
++	ret
++
++section .data
++.void:
++	db "#<void>", 0
++	
++write_sob_bool:
++	push rbp
++	mov rbp, rsp
++
++	mov rax, qword [rbp + 8 + 1*8]
++	cmp rax, SOB_FALSE
++	je .sobFalse
++	
++	mov rdi, .true
++	jmp .continue
++
++.sobFalse:
++	mov rdi, .false
++
++.continue:
++	mov rax, 0
++	call printf	
++
++	leave
++	ret
++
++section .data			
++.false:
++	db "#f", 0
++.true:
++	db "#t", 0
++
++write_sob_nil:
++	push rbp
++	mov rbp, rsp
++
++	mov rax, 0
++	mov rdi, .nil
++	call printf
++
++	leave
++	ret
++
++section .data
++.nil:
++	db "()", 0
++
++write_sob_string:
++	push rbp
++	mov rbp, rsp
++
++	mov rax, 0
++	mov rdi, .double_quote
++	call printf
++
++	mov rax, qword [rbp + 8 + 1*8]
++	mov rcx, rax
++	STRING_LENGTH rcx
++	STRING_ELEMENTS rax
++
++.loop:
++	cmp rcx, 0
++	je .done
++	mov bl, byte [rax]
++	and rbx, 0xff
++
++	cmp rbx, CHAR_TAB
++	je .ch_tab
++	cmp rbx, CHAR_NEWLINE
++	je .ch_newline
++	cmp rbx, CHAR_PAGE
++	je .ch_page
++	cmp rbx, CHAR_RETURN
++	je .ch_return
++	cmp rbx, CHAR_SPACE
++	jl .ch_hex
++	cmp rbx, CHAR_QUOTATION
++	je .ch_quotation
++	
++	mov rdi, .fs_simple_char
++	mov rsi, rbx
++	jmp .printf
++	
++.ch_hex:
++	mov rdi, .fs_hex_char
++	mov rsi, rbx
++	jmp .printf
++	
++.ch_tab:
++	mov rdi, .fs_tab
++	mov rsi, rbx
++	jmp .printf
++	
++.ch_page:
++	mov rdi, .fs_page
++	mov rsi, rbx
++	jmp .printf
++	
++.ch_return:
++	mov rdi, .fs_return
++	mov rsi, rbx
++	jmp .printf
++
++.ch_newline:
++	mov rdi, .fs_newline
++	mov rsi, rbx
++	jmp .printf
++
++.ch_quotation: 
++	mov rdi, .fs_quotation
++	mov rsi, rbx
++
++.printf:
++	push rax
++	push rcx
++	mov rax, 0
++	call printf
++	pop rcx
++	pop rax
++
++	dec rcx
++	inc rax
++	jmp .loop
++
++.done:
++	mov rax, 0
++	mov rdi, .double_quote
++	call printf
++
++	leave
++	ret
++section .data
++.double_quote:
++	db '"', 0
++.fs_simple_char:
++	db "%c", 0
++.fs_hex_char:
++	db "\x%01x;", 0	
++.fs_tab:
++	db "\t", 0
++.fs_page:
++	db "\f", 0
++.fs_return:
++	db "\r", 0
++.fs_newline:
++	db "\n", 0
++.fs_quotation:
++	db '\"' ,0
++
++write_sob_pair:
++	push rbp
++	mov rbp, rsp
++
++	mov rax, 0
++	mov rdi, .open_paren
++	call printf
++	mov rax, qword [rbp + 8 + 1*8]
++	CAR rax
++	push rax
++	call write_sob
++	add rsp, 1*8
++	mov rax, qword [rbp + 8 + 1*8]
++	CDR rax
++	push rax
++	call write_sob_pair_on_cdr
++	add rsp, 1*8
++	mov rdi, .close_paren
++	mov rax, 0
++	call printf
++
++	leave
++	ret
++
++section .data
++.open_paren:
++	db "(", 0
++.close_paren:
++	db ")", 0
++
++write_sob_pair_on_cdr:
++	push rbp
++	mov rbp, rsp
++
++	mov rbx, qword [rbp + 8 + 1*8]
++	mov rax, rbx
++	TYPE rbx
++	cmp rbx, T_NIL
++	je .done
++	cmp rbx, T_PAIR
++	je .cdrIsPair
++	push rax
++	mov rax, 0
++	mov rdi, .dot
++	call printf
++	call write_sob
++	add rsp, 1*8
++	jmp .done
++
++.cdrIsPair:
++	mov rbx, rax
++	CDR rbx
++	push rbx
++	CAR rax
++	push rax
++	mov rax, 0
++	mov rdi, .space
++	call printf
++	call write_sob
++	add rsp, 1*8
++	call write_sob_pair_on_cdr
++	add rsp, 1*8
++
++.done:
++	leave
++	ret
++
++section .data
++.space:
++	db " ", 0
++.dot:
++	db " . ", 0
++
++
++write_sob_vector:
++	push rbp
++	mov rbp, rsp
++
++	mov rax, 0
++	mov rdi, .fs_open_vector
++	call printf
++
++	mov rax, qword [rbp + 8 + 1*8]
++	mov rcx, rax
++	VECTOR_LENGTH rcx
++	cmp rcx, 0
++	je .done
++	VECTOR_ELEMENTS rax
++
++	push rcx
++	push rax
++	mov rax, qword [rax]
++	push qword [rax]
++	call write_sob
++	add rsp, 1*8
++	pop rax
++	pop rcx
++	dec rcx
++	add rax, 8
++
++.loop:
++	cmp rcx, 0
++	je .done
++
++	push rcx
++	push rax
++	mov rax, 0
++	mov rdi, .fs_space
++	call printf
++	
++	pop rax
++	push rax
++	mov rax, qword [rax]
++	push qword [rax]
++	call write_sob
++	add rsp, 1*8
++	pop rax
++	pop rcx
++	dec rcx
++	add rax, 8
++	jmp .loop
++
++.done:
++	mov rax, 0
++	mov rdi, .fs_close_vector
++	call printf
++
++	leave
++	ret
++
++section	.data
++.fs_open_vector:
++	db "#(", 0
++.fs_close_vector:
++	db ")", 0
++.fs_space:
++	db " ", 0
++
++
++write_sob_symbol:
++	push rbp
++	mov rbp, rsp
++	
++        mov rax, qword [rbp + 8 + 1*8]
++	DATA rax
++	add rax, start_of_data
++	mov rax, qword[rax]
++	mov rcx, rax
++	STRING_LENGTH rcx
++	STRING_ELEMENTS rax
++
++.loop:
++	cmp rcx, 0
++	je .done
++	mov bl, byte [rax]
++	and rbx, 0xff
++
++	cmp rbx, CHAR_TAB
++	je .ch_tab
++	cmp rbx, CHAR_NEWLINE
++	je .ch_newline
++	cmp rbx, CHAR_PAGE
++	je .ch_page
++	cmp rbx, CHAR_RETURN
++	je .ch_return
++	cmp rbx, CHAR_SPACE
++	jl .ch_hex
++	
++	mov rdi, .fs_simple_char
++	mov rsi, rbx
++	jmp .printf
++	
++.ch_hex:
++	mov rdi, .fs_hex_char
++	mov rsi, rbx
++	jmp .printf
++	
++.ch_tab:
++	mov rdi, .fs_tab
++	mov rsi, rbx
++	jmp .printf
++	
++.ch_page:
++	mov rdi, .fs_page
++	mov rsi, rbx
++	jmp .printf
++	
++.ch_return:
++	mov rdi, .fs_return
++	mov rsi, rbx
++	jmp .printf
++
++.ch_newline:
++	mov rdi, .fs_newline
++	mov rsi, rbx
++
++.printf:
++	push rax
++	push rcx
++	mov rax, 0
++	call printf
++	pop rcx
++	pop rax
++
++	dec rcx
++	inc rax
++	jmp .loop
++
++.done:
++	
++	leave
++	ret
++section .data
++.double_quote:
++	db '"', 0
++.fs_simple_char:
++	db "%c", 0
++.fs_hex_char:
++	db "\x%02x;", 0	
++.fs_tab:
++	db "\t", 0
++.fs_page:
++	db "\f", 0
++.fs_return:
++	db "\r", 0
++.fs_newline:
++	db "\n", 0
++.fs_quotation:
++	db '\"' ,0
++	
++write_sob_fraction:
++	push rbp
++	mov rbp, rsp
++
++	mov rsi, qword [rbp+8+8*1]
++	mov rdx, rsi
++	DATA_UPPER_MEIR rsi
++	DATA_LOWER_MEIR rdx
++
++	mov rdi, .frac_format_string
++	mov rax, 0
++	call printf
++
++	leave
++	ret
++
++section .data
++.frac_format_string:
++		db "%ld/%ld", 0
++
++
++section .data
++.slash:
++	db "/", 0
++
++
++write_sob_closure:
++	push rbp
++	mov rbp, rsp
++
++	mov rsi, qword [rbp + 8 + 1*8]
++	mov rdx, rsi
++	CLOSURE_ENV rsi
++	CLOSURE_CODE rdx
++	mov rdi, .closure
++	mov rax, 0
++	call printf
++
++	leave
++	ret
++section .data
++.closure:
++	db "#<closure [env:%p, code:%p]>", 0
++
++write_sob:
++	mov rax, qword [rsp + 1*8]
++	TYPE rax
++	jmp qword [.jmp_table + rax * 8]
++
++section .data
++.jmp_table:
++	dq write_sob_undefined, write_sob_void, write_sob_nil
++	dq write_sob_integer, write_sob_fraction, write_sob_bool
++	dq write_sob_char, write_sob_string, write_sob_symbol
++	dq write_sob_closure, write_sob_pair, write_sob_vector
++
++section .text
++write_sob_if_not_void:
++	mov rax, qword [rsp + 1*8]
++	cmp rax, SOB_VOID
++	je .continue
++
++	push rax
++	call write_sob
++	add rsp, 1*8
++	mov rax, 0
++	mov rdi, .newline
++	call printf
++	
++.continue:
++	ret
++section .data
++.newline:
++	db CHAR_NEWLINE, 0
++	
++	
++	
+\ No newline at end of file
+diff --git a/semantic-analyzer.scm b/semantic-analyzer.scm
+new file mode 100644
+index 0000000..44c6087
+--- /dev/null
++++ b/semantic-analyzer.scm
+@@ -0,0 +1,499 @@
++(define remove-applic-lambda-nil
++	(letrec ((loop (lambda (exp) 
++				(if (pair? exp)
++					(if (equal? (car exp) 'applic)
++						(if (equal? (caadr exp) 'lambda-simple)
++							(if (and (equal? (caddr exp) '()) (equal? (cadadr exp) '()))   
++								`( ,@(loop (car (cddadr exp))) ,@(map loop (cdr (cddadr exp))))
++								`( applic ,`( ,(caadr exp) ,(cadadr exp) ,@(loop (cddadr exp)) ) ,(loop (caddr exp)))
++							)
++							`(applic ,(loop (cadr exp)) ,@(loop (cddr exp)))
++						)
++						(if (equal? (cdr exp) '())
++							`( ,(loop (car exp)))
++							`( ,(loop (car exp)) ,@(map loop (cdr exp)))	
++						)
++					)
++					`( ,@exp ))
++				)))
++	(lambda (pexp) (loop pexp))
++	)	
++)
++
++(define searchIfBound 
++	(lambda (param body)
++		(letrec ((loop (lambda (body)
++						(ormap (lambda (bodyPart)
++							(cond ((equal? bodyPart '()) #f)
++								  ((nestedLambda? param bodyPart)
++										 (loop (cddr bodyPart)))
++								  ((pair? bodyPart)
++									(if  (equal? (car bodyPart) 'var) 
++										  (equal? (cadr bodyPart) param)				  
++											(loop bodyPart)
++								))
++								(else #f)))
++						body))))
++	(loop body))
++	)
++)
++
++(define nestedLambda? 
++	(lambda (param exp)
++		(if (pair? exp) 
++			(if (equal? (car exp) 'lambda-simple) 
++					(let ((paramList (cadr exp)))
++						(not (ormap (lambda (item) (equal? item param)) paramList)))
++					(if (equal? (car exp) 'lambda-opt)
++						(let ((paramList (append (cadr exp) (list (caddr exp)))))
++							(not (ormap (lambda (item) (equal? item param)) paramList)))
++						#f)
++			)
++		#f)
++	)
++)
++
++(define searchBoundLevel1 
++	(lambda (param body)
++		(if (equal? param '()) 
++			#f 
++			;(if (equal? (cdr body) '())
++				;(searchIfBound param body) 
++				(letrec ((loop (lambda (exp)
++							(ormap (lambda (bodyPart)
++									(if (pair? bodyPart)
++										(if (or (equal? (car bodyPart) 'lambda-simple) (equal? (car bodyPart) 'lambda-opt))
++											(if (nestedLambda? param bodyPart)
++												(searchIfBound param bodyPart)
++												#f
++											)	
++										 	(if (pair? (car bodyPart))
++												(or (loop (car bodyPart)) (loop (cdr bodyPart)))
++												(loop bodyPart))
++										 )
++									#f
++								))
++						exp))))
++			(loop body))
++		)		
++	)
++)
++
++(define paramIsSet?
++	(lambda (param body)
++		(letrec ((loop (lambda (body) 
++		(if (pair? body)
++			(if (pair? (car body)) 
++				(or (loop  (car body)) (loop  (cdr body)))
++				(if (or (equal? (car body) 'lambda-simple) (equal? (car body) 'lambda-opt))
++					(if (nestedLambda? param body)
++						(loop  (cddr body))
++						#f
++					)
++					(if (equal? (car body) 'set)
++						(if (equal? (cadadr body) param)
++							(equal? (cadadr body) param)
++							(loop (cddr body)))
++						(ormap (lambda (bodyPart) (loop bodyPart) ) body)
++					))
++			)
++		#f)	)))
++	(loop body))
++	)
++)
++		
++
++(define searchSet 
++	(lambda (param body)
++		(if (equal? param '()) 
++			#f
++		 (paramIsSet? param body)
++		)
++	)
++)
++
++(define paramHasGet?
++	(lambda (param body)
++		(letrec ((loop (lambda (body) 
++					(if (pair? body)
++						(if (or (equal? (car body) 'lambda-simple) (equal? (car body) 'lambda-opt))
++							(if (nestedLambda? param body)
++								(searchGet param (cddr body))
++								#f
++							)
++						(if (equal? (car body) 'set)
++							(searchGet param (cddr body))
++							(if (equal? (car body) 'var)
++								(equal? (cadr body) param)
++								(if (pair? (car body)) 
++									(or (searchGet param (car body)) (searchGet param (cdr body)))
++									#f)
++								)))
++						#f))))
++				(loop body))
++	)
++)
++
++(define searchGet 
++	(lambda (param body)
++		(if (equal? param '()) 
++			#f 
++			(letrec ((loop (lambda (body) 
++						(if (pair? body) 
++							(if (equal? (car body) 'set)
++								(paramHasGet? param body)
++								(if (and (or (equal? (car body) 'lambda-simple) (equal? (car body) 'lambda-opt)) (not (nestedLambda? param body)))
++									#f
++									(or (paramHasGet? param body)
++										(ormap (lambda (bodyPart)
++												(loop bodyPart)) 
++											body)
++									)
++								)
++							)
++						#f)
++					)))
++		(loop body))
++		)
++	)
++)
++
++
++
++
++(define printSet
++	(lambda (paramLst)
++		(map (lambda (param)
++			`(set (var ,param) (box (var ,param))))
++		paramLst)
++	) 
++)
++
++
++(define printParamSet
++	(lambda (paramLst lambdaBody)
++		(letrec ((needBox '())
++				(printLoop (lambda (param restParam)
++					(if (and (searchBoundLevel1 param lambdaBody) (searchSet param lambdaBody) (searchGet param lambdaBody))
++						(set! needBox (append needBox (list param))))
++					(if (not (equal? restParam '()))
++						(printLoop (car restParam) (cdr restParam))))
++				)
++			)
++		(printLoop (car paramLst) (cdr paramLst))
++		`( ,@(printSet needBox))
++		)
++	)
++)
++
++(define getNewParamList 
++	(lambda (paramLst boxLst lambdaBody)
++		(letrec ((paramList '())
++				(notBoxParam '())
++				(createLoop (lambda (param restParam)
++					(if (and (searchBoundLevel1 param lambdaBody) (searchSet param lambdaBody) (searchGet param lambdaBody))
++						(set! paramList (append paramList (list param)))					
++						(if (ormap (lambda (item) (equal? item param)) boxLst)
++							(set! notBoxParam (append notBoxParam (list param)))
++						))
++					(if (not (equal? restParam '()))
++						(createLoop (car restParam) (cdr restParam))))
++				)
++				(removeLoop (lambda (notBoxList prevParam prevBoxList)
++								(if (not (ormap (lambda (notB) (equal? prevParam notB)) notBoxParam))
++									(set! paramList (append paramList (list prevParam))))
++								(if (not (equal? prevBoxList '()))
++									(removeLoop notBoxParam (car prevBoxList) (cdr prevBoxList)))
++							))
++			)
++		(createLoop (car paramLst) (cdr paramLst))
++		(if (not (equal? boxLst '()))
++			(removeLoop notBoxParam (car boxLst) (cdr boxLst)))
++		paramList 
++		)
++	)
++)
++
++(define newBox? 
++	(lambda (paramLst lambdaBody)	
++		(ormap (lambda (param)
++			 (and (searchBoundLevel1 param lambdaBody) (searchSet param lambdaBody) (searchGet param lambdaBody))) 
++			paramLst)
++	)
++)
++
++
++(define box-set ; create list of param, move down to the exp and chack the 3 condition every time we get lambda (opt/simple)
++ (lambda (pexp)
++ 	(letrec ((removeSeq (lambda (lambdaBodyExp boxLst)
++						(if (equal? (caar lambdaBodyExp) 'seq)
++							(loop (cadar lambdaBodyExp) boxLst)
++							(loop lambdaBodyExp boxLst))))
++ 			(loop (lambda (pexp boxLst)
++	 		(if (pair? pexp)
++	 			(cond ((equal? (car pexp) 'var) 
++	 					(if (ormap (lambda (item) (equal? (cadr pexp) item)) boxLst )
++	 						`(box-get ,pexp)
++	 							`(,@pexp)))
++	 				((equal? (car pexp) 'set)
++	 					(if (ormap (lambda (item)  (equal? (cadadr pexp) item))boxLst) 
++	 							`(box-set ,(cadr pexp) ,@(map (lambda (item) (loop item boxLst)) (cddr pexp)))
++	 							`(set ,(cadr pexp) ,@(map (lambda (item) (loop item boxLst)) (cddr pexp)))))
++	 				((equal? (car pexp) 'seq)
++  					  		`(seq ,@(map (lambda (item) (loop item boxLst)) (cdr pexp))))
++	 				((equal? (car pexp) 'lambda-simple)
++	 					(let ((pList (cadr pexp))) 
++	 					(if (equal? pList '())
++	 						`( ,(car pexp) ,pList ,@(loop (cddr pexp) boxLst ))
++	 						(let ((newParamList '() ))
++	 							(set! newParamList (getNewParamList  pList boxLst (cddr pexp)))
++	 								(if (newBox? pList (cddr pexp))
++	 										`( ,(car pexp) ,pList ,`(seq  ,`( ,@(printParamSet pList (cddr pexp)) ,@(removeSeq (cddr pexp) newParamList))))
++	 										`( ,(car pexp) ,pList ,@(map (lambda (item) (loop item boxLst)) (cddr pexp))))
++	 								))))
++	 				((equal? (car pexp) 'lambda-opt)
++	 					(let ((pList (cadr pexp))
++	 							(restArgs (caddr pexp)))
++	 						(let ((lstParams (append  pList (list restArgs) '()))) 
++		 						(if (equal? lstParams '())
++									`( ,(car pexp) ,pList ,restArgs ,@(loop (cdddr pexp) boxLst))
++		 							(let ((newParamList '() ))
++			 							(set! newParamList (getNewParamList  lstParams boxLst (cddr pexp)))
++			 								(if (newBox? lstParams (cddr pexp))
++			 										`( ,(car pexp) ,pList ,restArgs ,`(seq  ,`( ,@(printParamSet lstParams (cdddr pexp)) ,@(removeSeq (cdddr pexp) newParamList))))
++			 										`( ,(car pexp) ,pList ,restArgs ,@(map (lambda (item) (loop item boxLst)) (cdddr pexp))))
++			 								)))))
++	 				((not (pair? (car pexp)))
++	 					`( ,(car pexp) ,@(map (lambda (pp) (loop pp boxLst)) (cdr pexp))))
++	 				(else   (map (lambda (pe) (loop pe boxLst)) pexp))
++
++	 			)
++	 		`(,@pexp) )		
++ 		)))
++ 	(if (and (pair? pexp) (pair? (car pexp)))
++ 		(map (lambda (pe) (loop pe '())) pexp)
++ 		(loop pexp '()))
++ 	)
++ )
++)
++
++
++(define numberingParamList   
++	(lambda (paramList)  
++		(letrec ((numberizeList (lambda (count)
++		                            (lambda (lst)
++		                            	(if (equal? lst '())
++		                            		'()
++			                              	(if (not (null? (cdr lst)))
++			                                  (list (list (car lst) count)
++			                                    ((numberizeList (+ count 1)) (cdr lst)))
++			                                (list (car lst) count))
++			                          )))))
++		    ((numberizeList 0) paramList))
++	)
++)
++
++(define findPvar 
++	(lambda (numberedParam exp)
++		(letrec ((loop 
++						(lambda (lst)
++							(if (pair? lst)
++								(if (pair? (car lst))
++									(if (equal? (caar lst) exp)
++										`(pvar ,exp ,(cadar lst))
++										(loop (cadr lst)))
++									(if (equal? (car lst) exp)
++										`(pvar ,exp ,(cadr lst))
++										'())
++								)
++							'())
++
++						)))
++		(loop numberedParam))
++	)
++)
++
++(define findBvarSpecific
++	(lambda (lst major exp)
++				(letrec ((loop 
++						(lambda (lst)
++							(if (equal? lst '())
++								'()
++								(if (pair? (car lst))
++									(if (equal? (caar lst) exp)
++										`(bvar ,exp ,major ,(cadar lst))
++										(loop (cadr lst)))
++									(if (equal? (car lst) exp)
++										`(bvar ,exp ,major ,(cadr lst))
++										'())
++								)
++							)
++
++						)))
++		(loop lst))
++	)
++)
++
++(define findBvar 
++	(lambda (boundLst exp)
++		(letrec ((loop (lambda (bLst counter)
++								(if (equal? bLst '())
++									'()
++									(if (equal? (findBvarSpecific (car bLst) counter exp) '())
++										(loop (cadr bLst) (+ counter 1))
++										(findBvarSpecific (car bLst) counter exp)
++									)
++								)
++
++		)))
++		(loop boundLst 0)   
++		)
++	)
++)
++
++(define lexLambdaBody 
++	(lambda (lambdaBody numberedParam prevParam)
++		(letrec ((loop (lambda (expr numberedParam prevParam) 
++								(if (pair? expr)
++									(if (pair? (car expr))
++										`( ,(loop (car expr) numberedParam prevParam) 
++										,@(map (lambda (expItem) (loop expItem numberedParam prevParam)) (cdr expr)))
++										(if (equal? (car expr) 'var) 
++											(if (not (equal? (findPvar numberedParam (cadr expr)) '()))
++													(findPvar numberedParam (cadr expr))
++													(if (not (equal? (findBvar prevParam (cadr expr)) '()))
++														(findBvar prevParam (cadr expr))
++														`(fvar ,(cadr expr))
++													)
++											)
++			  								(if (equal? (car expr) 'lambda-simple) 
++			  									(let ((numberedParamList (numberingParamList (cadr expr)))
++			  										  (updatePrevParam (list numberedParam prevParam)))  
++			  									   		`( ,(car expr) ,(cadr expr) ,@(loop (cddr expr) numberedParamList updatePrevParam)))
++			  									(if (equal? (car expr) 'lambda-opt)
++			  										(let ((numberedParamList (numberingParamList (append (cadr expr) (list (caddr expr)))))
++			  											(updatePrevParam (list numberedParam prevParam)))  
++			  									   		`(,(car expr) ,(cadr expr) ,(caddr expr) ,@(loop (cdddr expr) numberedParamList updatePrevParam)))
++													`( ,@(map (lambda (expItem) (loop expItem numberedParam prevParam)) expr)))
++			  								)
++										)
++									)
++
++										`( ,@expr)
++		  					)
++		  				)))
++  		(loop lambdaBody numberedParam prevParam)
++  		)
++	)
++)
++
++(define pe->lex-pe
++  (lambda (pexp)
++  	(letrec ((loop (lambda (exp) 
++						(if (pair? exp)
++							(if (equal? (car exp) 'var)
++									`(fvar ,(cadr exp))
++	  								(if (equal? (car exp) 'lambda-simple) 
++	  									(let ((numberedParamList (numberingParamList (cadr exp))))  
++	  									   		`( ,(car exp) ,(cadr exp) ,@(lexLambdaBody (cddr exp) numberedParamList '())))
++	  									(if (equal? (car exp) 'lambda-opt)
++	  										(let ((numberedParamList (numberingParamList (append (cadr exp) (list (caddr exp))))))
++	  											`( ,(car exp) ,(cadr exp) ,(caddr exp) ,@(lexLambdaBody (cdddr exp) numberedParamList '())))
++	  										(if (pair? (car exp)) 
++	  											`( ,(loop (car exp)) ,@(map (lambda (expItem) (loop expItem)) (cdr exp)))
++												`( ,(car exp) ,@(map (lambda (expItem) (loop expItem)) (cdr exp))))
++										) 						
++			  					)
++			  				
++	  						)
++	  					`( ,@exp)
++	  					))))
++  	(loop pexp)
++  )
++ )
++)
++(define isOneFrom? 
++	(lambda (formList exp)
++		(if (pair? exp)
++			(ormap (lambda (form) (equal? (car exp) form)) formList)
++			#f
++		)
++	)
++)
++
++(define annotate-tc
++  (letrec ((allExaptTheLast (lambda (lst tail)
++							(letrec ((loop (lambda (lst)
++										(if (equal? (cdr lst) '())
++											`( ,(run (car lst) tail) ) 
++											`( ,(run (car lst) #f ) ,@(loop (cdr lst)))
++										))))
++								(loop lst))))
++  			(allOfThem (lambda (lst tail )
++							(letrec ((loop (lambda (lst)
++										(if (equal? (cdr lst) '())
++											`( ,@(run (car lst) tail) ) 
++											`( ,@(run (car lst) tail) ,@(loop (cdr lst)))
++										))))
++								(loop lst))))
++  			(run (lambda (exp tail?) 
++  				(cond ((isOneFrom?  '(const) exp) `( ,@exp) )   
++  					  ((isOneFrom?  '(var fvar bvar pvar) exp) `(,@exp))
++  					  ((isOneFrom?  '(if3) exp)
++  					  		(operate (cdr exp) (lambda (test dit dif)
++				  					  		`(if3 ,(run test #f)
++				  					  				,(run dit tail?)
++				  					  				,(run dif tail?)))
++  					  		)
++  					  )
++  					  ((isOneFrom?  '(seq) exp)
++  					  			`( seq ,(allExaptTheLast (cadr exp) tail?))
++  					  )
++  					  ((isOneFrom?  '(or) exp)
++  					  		`( or ,(allExaptTheLast (cadr exp) tail?))
++  					  )
++  					  ((isOneFrom?  '(set box-set) exp)  
++  					  		;`(,@exp)
++  					  		`( ,(car exp) ,(cadr exp) ,(run (caddr exp) #f))
++  					  )
++  					  ((isOneFrom?  '(box box-get) exp)
++  					  		`(,@exp)
++  					  )
++  					  ((isOneFrom?  '(define) exp)
++  					  		`(define ,(cadr exp) ,(run (caddr exp) #f)) 
++  					  )
++  					  ((isOneFrom?  '(applic) exp)
++  					  		(if (equal? tail? #f)
++				  				`(applic ,(run (car (cdr exp)) #f) ,(allOfThem (cddr exp) #f)) ;,@(map (lambda (item) (run item #f seqOn?)) (cdr (cdr exp)))) 
++				  				`(tc-applic  ,(run (car (cdr exp)) #f)  ,(allOfThem (cddr exp) #f));,@(map (lambda (item) (run item #f seqOn?)) (cdr (cdr exp)))) 
++  					  		)  					  			
++  					  )
++  					  ((isOneFrom? '(lambda-simple) exp)
++  					  		;(set! tail? #t)
++  					  		`( ,(car exp) ,(cadr exp)  ,@(allExaptTheLast (cddr exp) #t))
++  					  )
++  					  ((isOneFrom?  '(lambda-opt) exp)
++  					  		;(set! tail? #t)
++  					  		`( ,(car exp) ,(cadr exp) ,(caddr exp)  ,@(allExaptTheLast (cdddr exp) #t))
++  					  )
++  					  ((pair? exp)
++  					  	(if (pair? (car exp))
++  					  	(if (equal? tail? #t)
++  					  			`(tc-applic ,@(allExaptTheLast exp tail?))
++  					  			`( ,@(allExaptTheLast exp tail?)))
++  					  	`(,@exp)))
++
++  					  (else `( ,@exp) ) 
++
++  				))
++  		))
++  (lambda (pexp) (run pexp #f))
++  )
++)
++
++
++(define operate 
++	(lambda (exp func)
++		(apply func exp)
++	)
++)
+diff --git a/sexpr-parser.scm b/sexpr-parser.scm
+new file mode 100644
+index 0000000..26035a8
+--- /dev/null
++++ b/sexpr-parser.scm
+@@ -0,0 +1,822 @@
++
++ (load "project/pc.scm")
++ 
++(define <whitespace>
++  (const
++   (lambda (ch)
++     (char<=? ch #\space))))
++
++(define <end_of_line_comment>
++   (new (*parser (char #\newline))
++	      (*parser <end-of-input>)
++	      (*disj 2)
++	      done))
++
++(define <line-comment>
++    (new
++     (*parser (char #\;))
++		 (*parser <any-char>)
++	   (*parser <end_of_line_comment>)
++	   *diff *star
++
++	   (*parser <end_of_line_comment>)
++	   (*caten 3)
++	   done))
++
++(define <commentOfInfix>
++  (new 
++       (*parser (char #\#))  
++       (*parser (char #\;))
++       (*caten 2)
++       (*pack-with (lambda(sulamit pointPsik)
++                        (list->string `(,sulamit ,pointPsik))))
++       (*delayed (lambda () <InfixAddOrSub>))
++       (*caten 2)
++       done))
++
++(define <comment>
++  (disj 
++	<commentOfInfix> 
++	<line-comment>))
++       
++
++(define <skip>
++  (disj 
++  	<whitespace> 
++  	<comment>
++	))
++
++
++(define <commnetOfSexpr>
++  (new 
++    (*parser (char #\#))  
++    (*parser (char #\;))
++    (*caten 2)
++    (*pack-with (lambda(sulamit pointPsik)
++                    (list->string `(,sulamit ,pointPsik))))
++    (*delayed (lambda () <sexpr>))
++    (*caten 2)
++   	(*parser <line-comment>)
++	    (*disj 2)
++       done))
++
++
++(define <whitespace_or_comment_of_sexpr>
++  (disj    
++	<whitespace>
++	<commnetOfSexpr>	))
++
++
++(define <wrapped_of_comment_and_whitespace>
++  (lambda (<wrapper>)
++    (lambda (<p>)
++      (new (*parser <wrapper>)
++	   (*parser <p>)
++	   (*parser <wrapper>)
++	   (*caten 3)
++	   (*pack-with
++	    (lambda (left exp right) exp))
++	   done))))
++
++(define <main_whitespace_or_comments> 
++	(<wrapped_of_comment_and_whitespace> 
++	(star <whitespace_or_comment_of_sexpr>)))
++
++
++(define <digits1-9>
++  (range #\1 #\9))
++
++(define <digits0-9>
++  (range #\0 #\9))
++
++(define <a-f>
++  (range #\a #\f))
++
++(define <A-F>
++ (range #\A #\F))
++
++  (define <PosNeg>
++   (new  
++         (*parser (char #\+))
++         (*parser (char #\-))
++         (*disj 2)
++   done))
++
++  (define <MulDiv>
++   (new  
++        (*parser (char #\*))
++         (*parser (char #\/))
++         (*disj 2)
++    done))  
++
++(define <PowerSymbol>
++  (new
++   (*parser (word "^"))
++   (*parser (word "**"))
++   (*disj 2)
++   (*pack (lambda(x) (list->string x)))
++   done))
++
++(define <Boolean_True>
++    (new
++     (*parser (word-ci "#t"))
++     (*pack (lambda(x) #t))
++     done ))
++
++(define <Boolean_False>
++    (new
++     (*parser  (word-ci "#f")) 
++     (*pack (lambda(x) #f))
++     done ))
++
++(define <Boolean>
++  (new
++   (*parser <Boolean_True>)
++   (*parser <Boolean_False>)
++   (*disj 2)
++   done))
++
++(define <SymbolChar>
++(new 
++    (*parser <digits0-9>)
++    (*parser (range #\a #\z))
++    (*parser (range #\A #\Z))
++    (*pack 
++       (lambda (ch) (char-downcase ch)))
++    (*parser (char #\!))
++    (*parser (char #\$))
++    (*parser (char #\^))
++    (*parser (char #\*))
++    (*parser (char #\-))
++    (*parser (char #\_))
++    (*parser (char #\=))
++    (*parser (char #\+))
++    (*parser (char #\<))
++    (*parser (char #\>))
++    (*parser (char #\?))
++    (*parser (char #\/))
++    (*parser (char #\\))
++    (*parser (char #\"))
++    (*disj 17)
++    done))
++  
++(define <Symbol>
++(new 
++  (*parser <SymbolChar>) *plus
++  (*pack (lambda (x) (string->symbol (list->string x)))) 
++ done))
++    
++(define <Natural>
++	(new         
++		(*parser (char #\0)) *star 
++		(*parser <digits1-9>)      
++		(*caten 2)
++		(*pack-with 
++			(lambda (dig0 dig1) dig1))
++		(*parser <digits0-9>) *star
++		(*caten 2)
++		(*pack-with 
++			(lambda (x xs) 
++				(string->number (list->string `(,x ,@xs)))))
++		(*parser (char #\0))
++		(*pack (lambda (_) 0))
++		(*disj 2)
++
++    		done))
++
++    
++(define <Integer>
++  (new
++
++       (*parser (char #\+))
++       (*parser <Natural>)
++       (*caten 2)
++       (*pack-with
++	(lambda (signP n) n))
++
++       (*parser (char #\-))
++       (*parser <Natural>)
++       (*caten 2)
++       (*pack-with
++	(lambda (signM n) (- n)))
++
++       (*parser <Natural>)
++
++       (*disj 3)
++
++       done))
++
++
++(define <Fraction>
++	(new 
++		(*parser <Integer>)
++		(*parser (char #\/))
++		(*parser <Natural>)
++		(*only-if (lambda (n) (not (zero? n))))
++		(*caten 3)
++		  (*pack-with
++	(lambda (int div nat)
++	  (/ int nat)))
++       done))
++
++
++
++(define <Number>
++    (new 
++        (*parser <Fraction>)
++        (*parser <Integer>)
++        (*disj 2)
++        (*delayed (lambda () <InfixSymbolChar>))
++        *not-followed-by
++    done))
++
++
++(define <HexChar>
++  (new
++  (*parser <digits0-9>)
++  (*parser <A-F>)
++  (*parser <a-f>)
++  (*disj 3)
++  done))
++  
++
++(define <CharPrefix>
++  (new
++   (*parser (word "#\\"))
++   done))
++
++
++(define <VisibleSimpleChar>
++  	(range #\x21 #\xff) )
++
++(define <NamedChar>
++  (new
++   (*parser (word-ci "lambda"))
++   (*pack (lambda(x) #\x3bb))
++   (*parser (word-ci "newline"))
++   (*pack (lambda(x) #\newline))
++   (*parser (word-ci "nul"))
++   (*pack (lambda(x) #\nul))
++   (*parser (word-ci "page"))
++   (*pack (lambda(x) #\page))
++   (*parser (word-ci "return"))
++   (*pack (lambda(x) #\return))
++   (*parser (word-ci "space"))
++   (*pack (lambda(x) #\space))
++   (*parser (word-ci "tab"))
++   (*pack (lambda(x) #\tab))
++   (*disj 7)
++   done))
++
++(define <HexUnicodeChar>
++  (new
++   (*parser (char-ci #\x))
++   (*parser <HexChar>) *plus
++   (*caten 2)
++   (*pack-with
++    (lambda (x hex) (integer->char (string->number (list->string hex) 16)))) 
++   done))
++
++(define <Char>
++(new
++    (*parser <CharPrefix>)
++    (*parser <NamedChar>)
++    (*parser <HexUnicodeChar>)
++    (*parser <VisibleSimpleChar>)
++    (*disj 3)
++    (*delayed (lambda () <Symbol>)) *not-followed-by
++    (*caten 2)
++    (*pack-with (lambda (prefix val) val))  
++    (*delayed (lambda () <skip>)) *star
++    (*caten 2)
++    (*pack-with (lambda (val w1)  val))
++    done))
++
++
++
++(define <StringLiteralChar>
++   (new  (*parser <any-char>)
++	 (*parser (char #\\))
++	 (*parser (char #\"))
++	 (*disj 2)
++	 *diff
++	 done))
++
++(define <StringHexChar>
++  (new
++   (*parser (word-ci "\\x"))
++   (*parser <HexChar>) *plus
++   (*parser (char #\;))
++   (*caten 3)
++   (*pack-with (lambda (a b c) (string->number (list->string b) 16)))
++   (*only-if (lambda(x)  (and (> x 0) (<  x  1114112) )))
++   (*pack (lambda (hex) (integer->char hex) ))
++   done))
++
++
++(define <StringMetaChar>
++  (new
++   (*parser (word-ci "\\\\"))
++   (*pack (lambda (x) #\\))
++   (*parser (word-ci "\\\""))
++   (*pack (lambda (x) #\"))
++   (*parser (word-ci "\t"))
++   (*pack (lambda(x) #\x9))
++   (*parser (word-ci "\f"))
++   (*pack (lambda (x) #\xc))
++   (*parser (word-ci "\n"))
++   (*pack (lambda (x) #\xa))
++   (*parser (word-ci "\r"))
++   (*pack (lambda (x) #\xd))
++   (*disj 6)
++   done))
++
++
++
++(define <StringChar>
++  (new
++   (*parser <StringLiteralChar>)
++   (*parser <StringHexChar>)
++   (*parser <StringMetaChar>)
++
++   (*disj 3)
++   done))
++
++
++(define <String>
++  (new 
++    (*parser (char #\"))
++    (*parser <StringChar>) *star
++    (*parser (char #\"))
++    (*caten 3)
++    (*pack-with
++	(lambda (_ st __) (list->string st)))
++   done))
++
++
++
++
++(define <CBNameSyntax1>
++	(new 
++		(*parser  <skip>) *star
++  		(*parser (char #\@))
++  		(*parser  <skip>) *star
++  		(*delayed (lambda () <sexpr>))
++  		(*parser  <skip>) *star
++  		(*caten 5)
++  		(*pack-with
++ 		  (lambda (w1 strodel w2 sexp1 w3)
++ 		  		(list 'cbname sexp1)))
++  	done))
++
++
++(define <CBNameSyntax2>
++	(new 
++		(*parser  <skip>) *star
++  		(*parser (char #\{))
++  		(*parser  <skip>) *star
++  		(*delayed (lambda () <sexpr>))
++  		(*parser  <skip>) *star
++  		(*parser (char #\}))
++  		(*parser  <skip>) *star
++  		(*caten 7)
++  		(*pack-with
++ 		  (lambda (w1 braceOpen w2 sexp1 w3 braceClose w4)
++ 		  		(list 'cbname sexp1)))
++  	done))
++
++(define <CBName>
++	(new 
++		(*parser <CBNameSyntax1>)
++		(*parser <CBNameSyntax2>)
++		(*disj 2)
++		done))
++
++
++
++(define <ProperList>
++(new
++    (*delayed (lambda () <skip>)) *star
++    (*parser (char #\())
++    (*delayed (lambda () <skip>)) *star
++    (*delayed (lambda () <sexpr>)) *star
++    (*delayed (lambda () <skip>)) *star
++    (*parser (char #\)))
++    (*caten 6)
++    (*pack-with (lambda (w1 braceOpen w2 sexp w3 braceClose) sexp))
++     done))
++
++
++(define <ImproperList>
++
++(new
++    (*delayed (lambda () <skip>)) *star
++    (*parser (char #\())
++    (*delayed (lambda () <skip>)) *star
++    (*delayed (lambda () <sexpr>)) *plus
++    (*delayed (lambda () <skip>)) *star
++    (*parser (char #\.))
++    (*delayed (lambda () <skip>)) *star
++    (*delayed (lambda () <sexpr>))
++    (*delayed (lambda () <skip>)) *star
++    (*parser (char #\)))
++    (*caten 10)
++    (*pack-with (lambda (w1 braceOpen w2 sexpr1 w3 point w4 sexpr2 w5 braceClose) (append sexpr1 sexpr2)))
++     done))
++
++
++(define <Vector>
++(new (*delayed (lambda () <skip>)) *star
++     (*parser (char #\#))
++     (*parser (char #\())
++     (*delayed (lambda () <skip>)) *star
++     (*delayed (lambda () <sexpr>)) *star
++     (*delayed (lambda () <skip>)) *star
++     (*parser (char #\)))
++     (*caten 7)
++     (*pack-with (lambda (w1 sulamit braceOpen w2 sexpr w3 braceClose) (list->vector sexpr)))
++     done))
++
++
++
++ (define <Quoted>
++  	(new 
++  		(*parser (char #\'))
++  		(*delayed (lambda () <sexpr>))
++  		(*caten 2)
++  		(*pack-with
++ 		  (lambda (q sexp1) (list 'quote sexp1)))
++  	done))
++ 
++
++
++ (define <QuasiQuoted>
++  	(new 
++  		 (*parser (char #\`))
++  		 (*delayed (lambda () <sexpr>))
++  		 (*caten 2)
++  		 (*pack-with
++ 		  (lambda (_ q) (list 'quasiquote q)))
++  	done))
++
++ 
++ (define <Unquoted>
++  	(new 
++  		(*parser (char #\,))      
++        (*parser (char #\@)) *not-followed-by    
++  		(*delayed (lambda () <sexpr>))
++        (*caten 2)       
++  		(*pack-with
++ 		  (lambda (_ q) (list 'unquote q)))
++  	done))
++
++ 
++ (define <UnquoteAndSpliced>
++  	(new
++  		(*parser (char #\,))
++                           
++  		(*parser (char #\@))
++  		(*delayed (lambda () <sexpr>))
++           (*caten 3)
++  		 (*pack-with
++ 		  (lambda (_ __ qs) (list 'unquote-splicing  qs)))
++  	done))
++
++
++
++(define <InfixPrefixExtensionPrefix>
++    (new 
++        (*parser (word-ci "##"))
++        (*parser (word-ci "#%"))
++        (*disj 2)
++        (*pack 
++        (lambda (x)
++        (list->string x)))
++    done))
++
++
++(define <InfixSymbolChar>
++	(new 
++		 (*parser  <digits0-9>)
++		 (*parser (range #\a #\z))
++		 (*parser (range #\A #\Z))
++		 (*pack (lambda (ch) (char-downcase ch)))   
++		 
++		 (*parser 	(char #\!))
++		 (*parser 	(char #\$))
++		 (*parser 	(char #\_))
++		 (*parser 	(char #\=))
++		 (*parser 	(char #\<))
++		 (*parser 	(char #\>))
++		 (*parser 	(char #\?))
++
++	(*disj 10)
++	done))
++
++
++(define <InfixSymbol>                                 
++	(new (*parser <InfixSymbolChar>)*plus
++    	 (*pack 
++    	 (lambda (ch) 
++    	 (string->symbol (list->string ch))))
++    	 done))
++
++(define <InfixAddOrSub>
++  (new
++   (*delayed (lambda ()  <skip>)) *star
++   (*delayed (lambda () <InfixMulOrDiv>))
++   (*delayed (lambda ()  <skip>)) *star
++   (*parser (char #\+))
++   (*parser (char #\-))
++   (*disj 2)
++   (*delayed (lambda ()  <skip>)) *star
++   (*delayed (lambda () <InfixMulOrDiv>))
++   (*delayed (lambda ()  <skip>)) *star
++   (*caten 5)
++   (*pack-with (lambda (w2 op w3 eSec w4) (cons op eSec))) *star
++   (*caten 3)
++   (*pack-with (lambda (w1 eFirst lst) 
++    			(fold-left (lambda (a b) `(,(string->symbol (string (car b))) , a ,(cdr b))) eFirst lst)))                                             
++ done))
++
++
++(define <InfixMulOrDiv>
++  (new
++   (*delayed (lambda ()  <skip>)) *star
++   (*delayed (lambda () <InfixPow>))
++   (*delayed (lambda ()  <skip>)) *star
++   (*parser (char #\/))
++   (*parser (char #\*))
++   (*disj 2)
++   (*delayed (lambda ()  <skip>)) *star
++   (*delayed (lambda () <InfixPow>))
++   (*delayed (lambda ()  <skip>)) *star
++   (*caten 5)
++   (*pack-with (lambda (w2 op w3 eSec w4) (begin (cons op eSec)))) 
++    *star
++   (*caten 3)                              
++   (*pack-with (lambda (W1 eFirst lst) 
++   				(begin (fold-left (lambda (a b) `(,(string->symbol (string (car b))) ,a ,(cdr b))) eFirst lst))))
++      
++    done))
++
++
++
++(define <InfixPow>
++(new (*delayed (lambda ()  <skip>)) *star
++     (*delayed (lambda () <InfixArrayGet>))
++     (*delayed (lambda ()  <skip>)) *star
++     (*parser  <PowerSymbol>)
++     (*delayed (lambda ()  <skip>)) *star
++     (*delayed (lambda () <InfixArrayGet>))
++     (*delayed (lambda ()  <skip>)) *star
++     (*caten 5)
++     (*pack-with (lambda (w2 operator w3 element2 w4)  (begin  (cons operator element2)))) *star
++     (*caten 3)
++     (*pack-with (lambda (w1 element1 pow_el2)  (begin (fold-left (lambda (a b) `(expt  ,(cdr b),a))  (if (not (null?  pow_el2))  (cdr (car (reverse pow_el2))) element1) (cdr (reverse (cons (cons #\^ element1) pow_el2)))))))
++     done))  
++          
++
++
++ (define <SymbolNotOperator>
++    (new 
++     (*parser <SymbolChar>)
++     (*only-if (lambda (x) (and (not (equal? x #\+)) (not (equal? x #\-)) (not (equal? x #\/)) (not (equal? x #\*)) (not (equal? x #\^))) ))
++      *plus     
++     (*pack (lambda (x) (string->symbol (list->string x))))                            
++  done))
++
++
++ (define <notOperator>
++    (new 
++         (*parser <Number>)
++         (*parser <SymbolNotOperator>) 
++         (*only-if (lambda (x) (not (null? (string->list (symbol->string x))))))
++         (*caten 2) 
++         (*pack-with (lambda (x y) (string->symbol (list->string (append (string->list (number->string x)) (string->list (symbol->string y))))))) 
++         (*parser <Number>)
++         (*parser <SymbolNotOperator>)
++         (*disj 3)
++         (*delayed (lambda () <InfixSexprEscape>))
++         (*disj 2)
++         done))
++
++ 
++(define <InfixParen>
++(new   
++       (*delayed (lambda ()  <skip>)) *star
++       (*parser (char #\())
++       (*delayed (lambda ()  <skip>)) *star
++       (*delayed (lambda () <InfixAddOrSub>))
++       (*delayed (lambda ()  <skip>)) *star
++       (*parser (char #\)))
++       (*caten 6)
++       (*pack-with (lambda (w1 openBracket w2 addSubExp w3 closeBracket) addSubExp))
++         (*delayed (lambda () <notOperator>))   
++          
++       (*disj 2)
++
++    done))
++
++(define <InfixNeg>
++ (new  
++      (*delayed (lambda ()  <skip>)) *star
++      (*parser (char #\-))
++      (*delayed (lambda ()  <skip>)) *star
++      (*parser (char #\-))                        
++      (*delayed (lambda() <InfixArrayGet>))
++      (*disj 2)                        
++      (*only-if (lambda (x) (not (equal? x #\-))))
++      (*parser <InfixParen>)
++      (*disj 2)
++      (*caten 4)
++      (*pack-with (lambda (x z w y) (if (number? y) (if (null? w) (- y) `(- ,y)) `(- ,y))))
++
++      (*parser <InfixParen>)
++
++      (*disj 2)  
++      
++      done)) 
++
++ (define <InfixArgList>
++ (new  
++ 	(*delayed (lambda ()  <skip>)) *star
++    (*delayed (lambda () <InfixAddOrSub>))  
++    (*pack (lambda(x) (list x))) 
++    (*delayed (lambda ()  <skip>)) *star
++    (*parser (char #\,))
++    (*delayed (lambda ()  <skip>)) *star
++    (*delayed (lambda () <InfixAddOrSub>)) 
++    (*delayed (lambda ()  <skip>)) *star
++	(*caten 4)  
++	(*pack-with (lambda (psik w3 inf1 w4)  (list inf1))) *star
++    (*caten 4)
++	(*pack-with (lambda(s0 inf1 v inf2) (fold-left (lambda(x y) (append x y)) inf1  inf2)))
++    
++ done))
++
++
++ 
++ (define <InfixFuncall>
++ (new  
++    (*delayed (lambda ()  <skip>)) *star
++    (*delayed (lambda () <InfixNeg>))   
++    (*delayed (lambda ()  <skip>)) *star
++    (*parser (char #\())
++    (*delayed (lambda ()  <skip>)) *star
++    (*delayed (lambda () <InfixArgList>))
++    (*parser <epsilon>)
++    (*disj 2)  
++    (*delayed (lambda ()  <skip>)) *star
++    (*parser (char #\)))
++    (*caten 6)
++    (*pack-with (lambda (w1 braceOpen w2 argOrEpsilion w3 braceClose) argOrEpsilion)) *plus
++    (*caten 3)    
++    (*pack-with (lambda(w1 neg  infArgOrEpsilion) (fold-left (lambda(x y) `( ,x ,@y)) neg  infArgOrEpsilion)))
++    (*delayed (lambda () <InfixNeg>)) 
++    (*disj 2)
++    done))
++
++ 
++(define <FuncallAndArrget>
++   (new  (*delayed (lambda() <InfixFuncall>))
++         (*delayed (lambda ()  <skip>)) *star
++         (*parser (char #\[))
++         (*delayed (lambda ()  <skip>)) *star           
++         (*delayed (lambda() <InfixAddOrSub>))
++         (*delayed (lambda ()  <skip>)) *star         
++         (*parser (char #\]))
++         (*caten 5)
++         (*pack-with (lambda(braceOpen w1 addsub w2 braceClose) addsub)) *star
++         (*parser (char #\())
++         (*delayed (lambda ()  <skip>)) *star
++         (*delayed (lambda() <InfixArgList>))
++         (*parser <epsilon>)
++         (*disj 2)
++         (*delayed (lambda ()  <skip>)) *star
++         (*parser (char #\)))
++         (*caten 5)
++         (*pack-with (lambda (braceOpen w1 ArgOrEpsilon w2 braceClose) ArgOrEpsilon)) *star
++         (*parser (char #\[))
++         (*delayed (lambda ()  <skip>)) *star           
++         (*delayed (lambda() <InfixAddOrSub>))
++         (*delayed (lambda ()  <skip>)) *star         
++         (*parser (char #\]))
++         (*caten 5)
++         (*pack-with (lambda(braceOpen w1 addsub2 w2 braceClose) addsub2)) *star
++         (*parser (char #\())
++         (*delayed (lambda ()  <skip>)) *star
++         (*delayed (lambda() <InfixArgList>))
++         (*parser <epsilon>)
++         (*disj 2)
++         (*delayed (lambda ()  <skip>)) *star
++         (*parser (char #\)))
++         (*caten 5)
++         (*pack-with (lambda (braceOpen w1 ArgOrEpsilon2 w2 braceClose) ArgOrEpsilon2)) *star               
++         (*caten 6)
++         (*pack-with 
++         (lambda (infuncall w1 addsub ArgOrEpsilon addsub2 ArgOrEpsilon2) 
++        (fold-left (lambda (a b) `(,a ,@b))
++        (fold-left (lambda (a b) `(vector-ref ,a,b))  
++        (fold-left (lambda (a b) `(,a ,@b)) 
++        (fold-left (lambda (a b) `(vector-ref ,a,b)) infuncall addsub) ArgOrEpsilon) addsub2) ArgOrEpsilon2))) 
++         done))
++
++
++ 
++
++
++    
++
++(define <InfixArrayGet>
++    (new 
++      (*delayed (lambda ()  <skip>)) *star
++      (*parser (char #\-))
++      (*delayed (lambda ()  <skip>)) *star
++      (*delayed (lambda () <Number>))
++      (*caten 4)
++      (*pack-with (lambda (w1 minus w2 num)  (- num)))
++      
++      (*delayed (lambda ()  <skip>)) *star
++      (*parser (char #\[))
++       (*delayed (lambda () <whitespace_or_comment_of_sexpr>)) *star
++      (*delayed (lambda () <InfixAddOrSub>))
++       (*delayed (lambda () <whitespace_or_comment_of_sexpr>)) *star
++      (*parser (char #\]))
++      (*caten 6)
++      (*pack-with (lambda (w1 openbracket w2 inf1 w3 closebracket)  inf1))   *plus
++      (*caten 2)
++      (*pack-with (lambda (num inf1) (fold-left (lambda (x y) `(vector-ref ,x ,y)) num  inf1)))
++      (*delayed (lambda () <FuncallAndArrget>))          
++      (*delayed (lambda ()  <skip>)) *star
++      (*delayed (lambda () <InfixFuncall>))
++      (*delayed (lambda ()  <skip>)) *star
++      (*parser (char #\[))
++       (*delayed (lambda () <whitespace_or_comment_of_sexpr>)) *star
++      (*delayed (lambda () <InfixAddOrSub>))
++       (*delayed (lambda () <whitespace_or_comment_of_sexpr>)) *star
++      (*parser (char #\]))                 
++      (*caten 6)
++      (*pack-with (lambda (w1 openbracket w2 inf1 w3 closebracket)  inf1))   *star
++      (*caten 3)
++      (*pack-with (lambda (w1 inffunc infaddsub) (fold-left (lambda (x y) `(vector-ref ,x ,y)) inffunc  infaddsub)))       
++      (*disj 3)                  
++      done))
++
++
++ (define <InfixSexprEscape>
++ (new (*delayed (lambda ()  <skip>)) *star 
++     (*parser <InfixPrefixExtensionPrefix>)
++     (*delayed (lambda ()  <skip>)) *star
++     (*delayed (lambda ()<sexpr>))
++     (*caten 4)
++     (*pack-with (lambda (w1 symInfix w2 sexp) sexp))
++     done)) 
++
++
++(define <InfixExpression>
++(new (*parser <InfixAddOrSub>)
++      done))
++  
++(define <InfixExtension>
++
++(new 
++     (*parser <InfixPrefixExtensionPrefix>)
++     (*parser  <skip>) *star
++     (*parser <InfixExpression>)
++     (*caten 3)
++     (*pack-with (lambda (sym _ expr) expr))
++
++     done))
++
++ 
++     
++
++
++      
++
++
++(define <sexpr>
++   (<main_whitespace_or_comments>
++(new
++   (*parser <Boolean>) 
++   (*parser <Number>)
++   (*parser <Symbol>)
++   (*parser (range #\0 #\9))
++   *diff
++   *not-followed-by
++   (*parser <Char>)
++   (*parser <String>)
++   (*parser <Symbol>)
++   (*parser <ProperList>)
++   (*parser <ImproperList>)
++   (*parser <Vector>)
++   (*parser <Quoted>)
++   (*parser <QuasiQuoted>)
++   (*parser <Unquoted>)
++   (*parser <UnquoteAndSpliced>)
++   (*parser <CBName>)
++   (*parser <InfixExtension>)
++   (*disj 14)
++        
++   done)))
+diff --git a/tag-parser.scm b/tag-parser.scm
+new file mode 100644
+index 0000000..2f71ea5
+--- /dev/null
++++ b/tag-parser.scm
+@@ -0,0 +1,393 @@
++(load "project/qq.scm")
++
++
++(define <tag_void> 
++	(lambda (exp)
++		(if (equal? (void) exp)
++			`(const ,exp)
++			#f
++		)
++	)
++)
++
++
++(define <tag_const>
++	(lambda (exp)
++		(if (or (const? exp)(vector? exp) (null? exp))
++			(if (null? exp) 
++				`(const ,exp)
++				(if (quote? exp)
++					`(const ,@(cdr exp))
++					`(const ,exp))
++			)
++			#f		
++		)
++	)
++)
++
++(define reserved_words
++'(and begin cond define do else if lambda let let* letrec or quasiquote unquote unquote-splicing quote set!))
++
++(define reserved_word? 
++	(lambda (w)
++	(ormap (lambda (itr) (equal? itr w)) reserved_words)
++	)
++)
++
++(define <tag_var>
++	(lambda (exp) 
++		(if (not (list? exp))
++			(if (not (reserved_word? exp))
++				`(var ,exp)
++				#f
++			)
++			#f
++		)
++	)
++)
++
++(define <tag_cond>
++	(lambda (exp)
++		(if (list? exp)
++			(if (equal? 'if (car exp))
++				(if (equal? (length (cdr exp)) 3)
++					`(if3 ,(parse (cadr exp)) ,(parse (caddr exp)) ,(parse (cadddr exp)))
++					(if (equal? (length (cdr exp)) 2)
++						`(if3 ,(parse (cadr exp)) ,(parse (caddr exp)) ,(parse (void)))
++					)
++				)
++				#f)
++		#f) 
++	)
++)
++
++
++(define <tag_disj>
++	(lambda (exp)
++		(if (list? exp)
++			(if (equal? 'or (car exp))
++				(cond ((equal? (length exp) 1) `(const #f))
++				      (else 
++				      `(or ,(map (lambda (itr) (parse itr)) (cdr exp))))
++				)
++				#f
++			)
++		#f)
++	)
++)
++
++(define member?
++  (lambda (item lst)
++    (if (or (not (pair? lst)) (null? lst))
++		(equal? item lst)
++		(if (equal? (car lst) item)
++	    	#t
++	    	(member? item (cdr lst))
++	    )
++	)
++  )
++)
++
++(define valid-params?
++  (lambda (lst)
++    (if (null? lst) 
++	       #t
++	   (if (not (pair? lst))
++	       (symbol? lst)
++	       (if (or  (not (symbol? (car lst))) (member? (car lst) (cdr lst)))
++		      #f
++		   (valid-params? (cdr lst)))))))
++
++(define reg_lambda
++	(lambda (exp)
++		(if (valid-params? (car exp))
++			`(lambda-simple ,(car exp) ,(parse `(begin ,@(cdr exp))))
++			(error 'param "parameters makes no sense!")
++		)
++	)
++)
++
++(define opt_lambda
++	(lambda (exp)
++		(if (valid-params? (car exp))
++			(let ((args (find_args (car exp))))
++			`(lambda-opt ,args ,(cdr (last-pair (car exp))) ,(parse `(begin ,@(cdr exp))))
++			)
++			(error 'param "parameters in opt makes no sense!")
++		)
++	)
++)
++
++(define find_args
++	(lambda (lst)
++			(if (pair? lst) 
++				 (append (list(car lst)) (find_args (cdr lst)))
++				'()
++				)
++		)
++)
++
++(define variadic_lambda 
++	(lambda (exp)
++		(let ((args (car exp))
++			   (body (cdr exp)))
++				`(lambda-opt () ,args ,(parse `(begin ,@body)))
++		)
++	)
++)
++
++(define <tag_lambda>
++	(lambda (exp)
++		(if (list? exp)
++			(if (equal? 'lambda (car exp))
++				(if (list? (cadr exp))
++					(reg_lambda (cdr exp))
++						(if (pair? (cadr exp))
++							(opt_lambda (cdr exp))
++							(variadic_lambda (cdr exp))
++						)
++				)
++			#f)
++		#f)
++	)
++)
++
++(define reg_define
++	(lambda (exp)
++		`(define (var ,(car exp)) ,(parse (cadr exp)))
++	)
++)
++
++(define Mit_define
++	(lambda (exp)
++		(let ((tempVar (car exp))
++				(parm (cdar exp))
++				(body (cadr exp)))
++		`(define (var ,(car (find_args tempVar))) ,(parse `(lambda ,parm ,body))))
++	)
++)
++
++(define <tag_define>
++	(lambda (exp)
++		(if (list? exp)
++			(if (equal? 'define (car exp))
++				(if (not (pair? (cadr exp)))
++					(reg_define (cdr exp))
++					(Mit_define (cdr exp))
++				)
++			#f)
++		#f)
++	)
++)
++
++(define <tag_assignment>
++	(lambda (exp)
++		(if (list? exp)
++			(if (equal? 'set! (car exp))
++				`(set (var ,(cadr exp)) ,(parse (caddr exp)))
++				#f
++			)
++		#f)
++	)
++)
++
++(define <tag_application>
++	(lambda (exp)
++		(if (list? exp)
++			(if (not (reserved_word?  (car exp)))
++				`(applic ,(parse (car exp)) ,(parse-applic (cdr exp)))
++				
++			#f)
++
++		#f)
++
++	)
++)
++
++(define parse-applic
++	(lambda(exp)
++		(map (lambda(x)(parse x))exp)
++	)
++)
++
++(define flatSeq 
++	(lambda (ls)
++	 (fold-left 
++	 	(lambda (acc curr)
++				(cond 
++					((and (list? curr) (equal? (car curr) 'begin)) (append acc (flatSeq (cdr curr))))
++					(else (append acc `(,curr))))
++			) 
++	 '() 
++	ls)))
++
++(define <tag_sequence>
++	(lambda (exp)
++		(if (equal? (car exp) 'begin)
++			(cond
++				((null? (cdr exp)) `(const ,(void)))
++				((equal? (length exp) 2) (parse (cadr exp)))
++				(else `(seq ,(map parse (flatSeq (cdr exp))))))
++		#f)
++	)
++)
++
++
++(define sp_vars
++	(lambda (lst)
++		(map (lambda (itr) (append (car itr))) lst)
++	)
++)
++
++(define sp_exps
++	(lambda (lst)
++		(map (lambda (itr) (append (cadr itr))) lst)
++	)
++)
++
++(define <macro_let>
++	(lambda (exp)
++			(if (list? exp)
++					(if (equal? 'let (car exp))
++						(let ((vars (sp_vars (cadr exp)))
++							  (exps (sp_exps (cadr exp))))
++						`(applic ,(parse `(lambda ,vars ,@(cddr exp)))  ,(map (lambda (itr) (parse itr)) exps)) 
++						)
++				#f)
++		#f)
++	)
++)	
++
++(define nested_let
++	(lambda (expList body)
++			(letrec ((loop
++					(lambda (lst b)
++						(if (null? (cdr lst))
++							  (append `(let  ( ,(car lst))) b)
++							`(let  ( ,(car lst) )  ,(loop (cdr lst) b) )
++						))))
++					(loop expList body)
++				)
++		)
++
++)
++
++(define <macro_let*>
++	(lambda (exp)
++			(if (list? exp)
++					(if (equal? 'let* (car exp))
++						(let ((def_list (cadr exp))
++							  (body (cddr exp)))
++								(parse (nested_let def_list body))
++						)
++					#f)
++				#f)
++	)
++)
++
++(define build_letrec
++	(lambda (vars exp body)
++			`(let ,(map (lambda (lst) (list lst #f)) vars) 
++					,@(append `,(map (lambda (lst1 lst2) (list 'set! lst1 lst2)) vars exp)
++					body )
++			)
++	)
++)
++
++(define <macro_letrec>
++	(lambda (exp)
++		(if (list? exp)
++					(if (equal? 'letrec (car exp))
++						(let ((vars (sp_vars (cadr exp)))
++							  (exps (sp_exps (cadr exp))))
++							   (parse (build_letrec vars exps (cddr exp)) )
++							)
++					#f)
++			#f)
++	)
++)
++
++(define nested_and
++	(lambda (lst)
++		(letrec ((loop
++				(lambda (lst)
++					(if (null? lst)
++						#t
++						`(if ,(car lst) ,(loop (cdr lst)) #f)
++			))))
++	(loop lst))
++	)
++)
++
++(define <macro_and>
++	(lambda (exp)
++		(if (list? exp)
++			(if (equal? 'and (car exp))
++				(cond ((null? (cdr exp)) (parse #t))
++					((= (length (cdr exp)) 1) (parse (cadr exp)))
++					(else (parse `(if ,(cadr exp) (and ,@(cddr exp)) #f)))) 
++			#f)
++		#f)
++	)
++)
++(define nested_cond
++	(lambda (lst)
++		(cond 
++			  ((equal? 'else (caar lst)) (parse `(begin ,@(cdar lst))) )
++			  ((eq? 1 (length lst)) (parse `(if ,(caar lst) (begin ,@(cdar lst)) )))
++			  (else (parse `(if ,(caar lst) (begin ,@(cdar lst))  (cond ,@(cdr lst))) ))
++		)
++
++	)
++)
++
++(define <macro_cond>
++	(lambda (exp)
++		(if (list? exp)
++			(if (equal? 'cond (car exp))
++				 (nested_cond (cdr exp))
++			#f)
++		#f)
++	)
++)
++
++(define is_qq? 
++	(lambda (lst)
++		(equal? 'quasiquote (caar lst)) 
++	)
++)
++
++(define <quasiquote_expand>
++	(lambda (sexp)
++		(if (is_qq? (list sexp))
++		(parse (expand-qq (cadr sexp)))	 
++		#f
++		)
++	)
++)
++
++(define parse
++  (lambda (sexp)
++  		(or 
++  			(<tag_const> sexp)
++  			(<tag_void> sexp)
++  			(<tag_var> sexp)
++  			(<tag_cond> sexp)
++  			(<tag_disj> sexp)
++  			(<tag_lambda> sexp)
++  			(<tag_define> sexp)
++  			(<tag_assignment> sexp)
++  			(<tag_application> sexp)
++  			(<tag_sequence> sexp)
++  			(<macro_let> sexp)
++  			(<macro_let*> sexp)
++  			(<macro_letrec> sexp)
++  			(<macro_and> sexp)
++  			(<macro_cond> sexp)
++  			(<quasiquote_expand> sexp)
++
++  	  	)	
++  )
++)
++
++
